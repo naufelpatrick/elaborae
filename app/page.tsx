@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { CofreSession, composePrompt, nextQuestion, summary } from "@/lib/cofre";
+import { CofreSession, applyAnswer, composePrompt, nextQuestion, summary } from "@/lib/cofre";
 
 type View = "intent" | "interview" | "result";
 
@@ -31,7 +31,7 @@ export default function Home() {
 
   function answer(value = draft) {
     if (!question || !value.trim()) return;
-    const next = { ...session, answers: [...session.answers, { question: question.text, answer: value.trim(), dimension: question.dimension }] };
+    const next = applyAnswer(session, question, value);
     setSession(next);
     setDraft("");
     if (!nextQuestion(next)) setView("result");
