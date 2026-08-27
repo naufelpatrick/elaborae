@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { CofreSession, applyAnswer, composePrompt, nextQuestion, summary } from "@/lib/cofre";
+import { CofreSession, ENGINE_VERSION, applyAnswer, composePrompt, nextQuestion, summary } from "@/lib/cofre";
 
 type View = "intent" | "interview" | "result";
 
@@ -67,7 +67,7 @@ export default function Home() {
 
   return (
     <main>
-      <header><Logo /><div className="enginePill"><span /> COFRE Engine <b>0.1</b></div></header>
+      <header><Logo /><div className="enginePill"><span /> COFRE Engine <b>{ENGINE_VERSION}</b></div></header>
 
       {view === "intent" && (
         <section className="hero shell">

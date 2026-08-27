@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const ENGINE_VERSION = "0.2" as const;
+
 export const DimensionSchema = z.enum(["contexto", "objetivo", "formato", "restricoes", "exemplo"]);
 export type Dimension = z.infer<typeof DimensionSchema>;
 export const DimensionStatusSchema = z.enum(["missing", "partial", "sufficient", "not_required", "contradictory"]);
@@ -11,7 +13,7 @@ export type CofreSession = z.infer<typeof CofreSessionSchema>;
 export const QuestionSchema = z.object({ dimension: DimensionSchema, eyebrow: z.string(), text: z.string().min(1), hint: z.string(), options: z.array(z.string()), type: z.enum(["discovery", "deepening", "choice", "confirmation", "conflict_resolution"]) });
 export type Question = z.infer<typeof QuestionSchema>;
 export const EngineAnalysisSchema = z.object({
-  engineVersion: z.literal("0.2"), promptVersion: z.literal("orchestrator-0.2.0"),
+  engineVersion: z.literal(ENGINE_VERSION), promptVersion: z.literal("orchestrator-0.2.0"),
   artifact: z.enum(["workshop", "apresentacao", "aula", "campanha", "analise", "plano", "texto", "codigo", "generic"]),
   dimensions: z.record(DimensionSchema, DimensionStatusSchema),
   sufficiency: z.enum(["NOT_READY", "ASK_IF_HIGH_VALUE", "READY", "READY_WITH_ASSUMPTION"]),
@@ -131,7 +133,7 @@ export function analyzeSession(rawSession: CofreSession): EngineAnalysis {
     .filter(([, status]) => ["missing", "partial", "contradictory"].includes(status))
     .map(([target, status]) => ({ target, severity: target === "objetivo" || (artifact === "workshop" && ["contexto", "restricoes"].includes(target)) ? "critical" as const : "relevant" as const, description: `${target} permanece ${status}; ainda há ambiguidade com impacto na execução.` }));
   return EngineAnalysisSchema.parse({
-    engineVersion: "0.2", promptVersion: "orchestrator-0.2.0", artifact, dimensions,
+    engineVersion: ENGINE_VERSION, promptVersion: "orchestrator-0.2.0", artifact, dimensions,
     sufficiency: next ? (gaps.some((gap) => gap.severity === "critical") ? "NOT_READY" : "ASK_IF_HIGH_VALUE") : "READY",
     nextAction: next ? "ASK" : "COMPOSE", nextQuestion: next, gaps,
   });
