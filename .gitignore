@@ -1,0 +1,9 @@
+node_modules/
+.next/
+dist/
+.wrangler/
+.env
+.env.local
+*.log
+.DS_Store
+*.tsbuildinfo
