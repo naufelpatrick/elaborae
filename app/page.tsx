@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { CofreSession, ENGINE_VERSION, applyAnswer, composePrompt, nextQuestion, summary } from "@/lib/cofre";
 
-type View = "intent" | "interview" | "result";
+type View = "intent" | "interview" | "result" | "review";
 
 const initialSession: CofreSession = { originalRequest: "", answers: [], skipped: [] };
 
@@ -17,6 +17,7 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
+  const [reviewSession, setReviewSession] = useState<CofreSession | null>(null);
   const question = useMemo(() => nextQuestion(session), [session]);
   const prompt = useMemo(() => composePrompt(session), [session]);
 
@@ -63,6 +64,33 @@ export default function Home() {
     setSession({ ...session, originalRequest: `${session.originalRequest}\n\nAjuste solicitado: ${draft.trim()}` });
     setDraft("");
     setAdjusting(false);
+  }
+
+  function updateAnswer(index: number, answer: string) {
+    if (!reviewSession) return;
+    setReviewSession({ ...reviewSession, answers: reviewSession.answers.map((item, itemIndex) => itemIndex === index ? { ...item, answer } : item) });
+  }
+
+  function removeAnswer(index: number) {
+    if (!reviewSession) return;
+    setReviewSession({ ...reviewSession, answers: reviewSession.answers.filter((_, itemIndex) => itemIndex !== index) });
+  }
+
+  function openReview() {
+    setReviewSession({ ...session, answers: session.answers.map((item) => ({ ...item })), skipped: [...session.skipped] });
+    setView("review");
+  }
+
+  function saveReview() {
+    if (!reviewSession) return;
+    setSession({ ...reviewSession, originalRequest: reviewSession.originalRequest.trim(), answers: reviewSession.answers.filter((item) => item.answer.trim()).map((item) => ({ ...item, answer: item.answer.trim() })) });
+    setReviewSession(null);
+    setView("result");
+  }
+
+  function cancelReview() {
+    setReviewSession(null);
+    setView("result");
   }
 
   return (
@@ -136,7 +164,29 @@ export default function Home() {
               <div className="summary">{summary(session).map(([label, value], index) => <div key={label}><i>{index + 1}</i><span><b>{label}</b><small>{value}</small></span></div>)}</div>
             </aside>
           </div>
-          {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary">Aplicar ajuste</button></form> : <div className="resultActions"><button onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button onClick={() => setView("interview")}>↶ Revisar respostas</button></div>}
+          {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary">Aplicar ajuste</button></form> : <div className="resultActions"><button onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button onClick={openReview}>↶ Revisar respostas</button></div>}
+        </section>
+      )}
+
+      {view === "review" && reviewSession && (
+        <section className="review shell narrow">
+          <button className="back" onClick={cancelReview}>← Voltar ao prompt</button>
+          <div className="kicker">Revise antes de regenerar</div>
+          <h2>Suas respostas</h2>
+          <p className="lead">Edite o que mudou ou remova uma resposta que não deve fazer parte do prompt.</p>
+          <div className="reviewList">
+            <article>
+              <label htmlFor="original-request">Pedido inicial</label>
+              <textarea id="original-request" value={reviewSession.originalRequest} onChange={(event) => setReviewSession({ ...reviewSession, originalRequest: event.target.value })} />
+            </article>
+            {reviewSession.answers.map((item, index) => (
+              <article key={`${item.question}-${index}`}>
+                <div className="reviewLabel"><label htmlFor={`answer-${index}`}>{item.question}</label><button onClick={() => removeAnswer(index)} aria-label={`Remover resposta: ${item.answer}`}>Remover</button></div>
+                <textarea id={`answer-${index}`} value={item.answer} onChange={(event) => updateAnswer(index, event.target.value)} />
+              </article>
+            ))}
+          </div>
+          <div className="reviewActions"><button className="secondary" onClick={cancelReview}>Cancelar</button><button className="primary" disabled={!reviewSession.originalRequest.trim()} onClick={saveReview}>Salvar e regenerar</button></div>
         </section>
       )}
 
