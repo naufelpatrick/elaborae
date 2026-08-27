@@ -80,6 +80,28 @@ export default function Home() {
             <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim()}>Continuar <span>→</span></button></div>
           </form>
           <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O COFRE identifica apenas o que realmente faz diferença.</p></div>
+          <section className="cofreIntro" aria-labelledby="cofre-title">
+            <div className="cofreIntroCopy">
+              <div className="kicker">Por trás do PromptExIA</div>
+              <h2 id="cofre-title">O que é o Framework <em>C.O.F.R.E.?</em></h2>
+              <p>É uma metodologia para transformar uma ideia ainda incompleta em uma instrução clara e útil para sistemas de IA. Você conversa naturalmente; o Engine identifica, nos bastidores, apenas as informações que podem melhorar o resultado.</p>
+              <div className="notForm"><span>✦</span><b>COFRE é um modelo de diagnóstico, não um formulário.</b></div>
+            </div>
+            <div className="cofreDimensions">
+              {[
+                ["C", "Contexto", "A situação, o público e o cenário que ajudam a IA a interpretar o pedido."],
+                ["O", "Objetivo", "O resultado que você realmente quer alcançar — não apenas a tarefa."],
+                ["F", "Formato", "Como a resposta precisa chegar para ser imediatamente utilizável."],
+                ["R", "Restrições", "Os limites, critérios e condições que precisam ser respeitados."],
+                ["E", "Exemplo", "Uma referência útil quando ela ajuda a reduzir ambiguidades."],
+              ].map(([letter, title, description]) => (
+                <article key={letter}>
+                  <i>{letter}</i>
+                  <div><h3>{title}</h3><p>{description}</p></div>
+                </article>
+              ))}
+            </div>
+          </section>
         </section>
       )}
 
