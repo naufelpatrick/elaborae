@@ -1,0 +1,6 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Símbolo Elaborae</title>
+  <rect x="32" y="32" width="448" height="448" rx="224" fill="#FFB66E"/>
+  <path d="M32 326C32 411.05 100.95 480 186 480H32V326Z" fill="#FFB66E"/>
+  <path d="M177 144H345V186H226V235H324V277H226V326H345V368H177V144Z" fill="#241B35"/>
+</svg>

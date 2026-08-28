@@ -8,7 +8,7 @@ type View = "intent" | "interview" | "result" | "review";
 const initialSession: CofreSession = { originalRequest: "", answers: [], skipped: [] };
 
 function Logo() {
-  return <div className="logo" aria-label="PromptExIA"><span className="logoMark">P</span><span>Prompt<span className="accent">Ex</span>IA</span></div>;
+  return <div className="logo" aria-label="Elaborae"><span className="logoMark">E</span><span>Elabor<span className="accent">ae</span></span></div>;
 }
 
 export default function Home() {
@@ -111,7 +111,7 @@ export default function Home() {
           <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O COFRE identifica apenas o que realmente faz diferença.</p></div>
           <section className="cofreIntro" aria-labelledby="cofre-title">
             <div className="cofreIntroCopy">
-              <div className="kicker">Por trás do PromptExIA</div>
+              <div className="kicker">Por trás do Elaborae</div>
               <h2 id="cofre-title">O que é o Framework <em>C.O.F.R.E.?</em></h2>
               <p>É uma metodologia para transformar uma ideia ainda incompleta em uma instrução clara e útil para sistemas de IA. Você conversa naturalmente; o Engine identifica, nos bastidores, apenas as informações que podem melhorar o resultado.</p>
               <div className="notForm"><span>✦</span><b>COFRE é um modelo de diagnóstico, não um formulário.</b></div>
@@ -191,7 +191,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer><span>PromptExIA</span><span>Intenção clara. Resultado melhor.</span><span>Privacidade por padrão</span></footer>
+      <footer><span>Elaborae</span><span>Ideias claras. Prompts melhores.</span><span>Privacidade por padrão</span></footer>
     </main>
   );
 }

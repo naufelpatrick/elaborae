@@ -1,6 +1,6 @@
-# PromptExIA
+# Elaborae
 
-Webapp que transforma uma intenção em linguagem natural em um prompt universal, por meio de uma entrevista adaptativa curta baseada no **COFRE Engine v0.1**.
+Webapp que transforma uma intenção em linguagem natural em um prompt universal, por meio de uma entrevista em cinco etapas baseada no **COFRE Engine**.
 
 ## Executar localmente
 

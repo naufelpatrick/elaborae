@@ -1,0 +1,8 @@
+<svg width="286" height="72" viewBox="0 0 286 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Elaborae</title>
+  <rect x="4" y="4" width="64" height="64" rx="32" fill="#FFB66E"/>
+  <path d="M4 46C4 58.15 13.85 68 26 68H4V46Z" fill="#FFB66E"/>
+  <path d="M25 20H49V26H32V33H46V39H32V46H49V52H25V20Z" fill="#241B35"/>
+  <text x="84" y="47" fill="#241B35" font-family="Manrope, Arial, sans-serif" font-size="35" font-weight="700" letter-spacing="-1.6">Elabor</text>
+  <text x="201" y="47" fill="#7352B8" font-family="Manrope, Arial, sans-serif" font-size="35" font-weight="700" letter-spacing="-1.6">ae</text>
+</svg>

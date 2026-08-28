@@ -1,9 +1,0 @@
-<svg width="312" height="72" viewBox="0 0 312 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>PromptExIA</title>
-  <rect x="4" y="4" width="64" height="64" rx="18" fill="#17231D"/>
-  <path d="M4 49C4 59.4934 12.5066 68 23 68H4V49Z" fill="#17231D"/>
-  <path d="M26 51V21H38.4C45.7 21 50 25 50 31.4C50 38.1 45.4 42.1 38 42.1H32.3V51H26ZM32.3 36.9H37.7C41.5 36.9 43.7 35.1 43.7 31.7C43.7 28.4 41.5 26.7 37.7 26.7H32.3V36.9Z" fill="#F5F3ED"/>
-  <text x="84" y="46" fill="#17231D" font-family="Manrope, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-1.5">Prompt</text>
-  <text x="203" y="46" fill="#1D6646" font-family="Manrope, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-1.5">Ex</text>
-  <text x="241" y="46" fill="#17231D" font-family="Manrope, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-1.5">IA</text>
-</svg>
