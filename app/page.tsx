@@ -12,6 +12,7 @@ import {
 } from "@/lib/cofre";
 
 type View = "intent" | "interview" | "result" | "review";
+type LoadingMode = "intent" | "answer" | "compose" | "adjust" | "review" | null;
 type EngineReply = {
   source: "llm" | "fallback";
   question: Question | null;
@@ -21,8 +22,46 @@ type EngineReply = {
 
 const initialSession: CofreSession = { originalRequest: "", answers: [], skipped: [] };
 
+const loadingCopy: Record<Exclude<LoadingMode, null>, { title: string; detail: string }> = {
+  intent: {
+    title: "Entendendo sua ideia…",
+    detail: "Identificando o que realmente precisa ser esclarecido antes de seguir.",
+  },
+  answer: {
+    title: "Aprofundando sua resposta…",
+    detail: "Avaliando se vale explorar mais algum ponto ou se já temos clareza suficiente.",
+  },
+  compose: {
+    title: "Elaborando sua ideia…",
+    detail: "Ampliando a execução sem mudar sua intenção e preparando um prompt realmente útil.",
+  },
+  adjust: {
+    title: "Refinando o prompt…",
+    detail: "Incorporando seu ajuste e validando a nova versão antes de entregar.",
+  },
+  review: {
+    title: "Regenerando com suas revisões…",
+    detail: "Reorganizando o contexto e reconstruindo o prompt com as mudanças que você fez.",
+  },
+};
+
 function Logo() {
   return <div className="logo" aria-label="Elaborae"><span className="logoMark">E</span><span>Elabor<span className="accent">ae</span></span></div>;
+}
+
+function Thinking({ mode }: { mode: Exclude<LoadingMode, null> }) {
+  const copy = loadingCopy[mode];
+  return (
+    <div className="thinkingOverlay" role="status" aria-live="polite" aria-busy="true">
+      <div className="thinkingCard">
+        <div className="thinkingMark" aria-hidden="true"><span /><span /><span /></div>
+        <div>
+          <strong>{copy.title}</strong>
+          <p>{copy.detail}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Home() {
@@ -35,9 +74,11 @@ export default function Home() {
   const [adjusting, setAdjusting] = useState(false);
   const [reviewSession, setReviewSession] = useState<CofreSession | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
   const currentStep = question ? ["contexto", "objetivo", "formato", "restricoes", "exemplo"].indexOf(question.dimension) + 1 : 5;
 
-  async function requestEngine(nextSession: CofreSession, forceCompose = false) {
+  async function requestEngine(nextSession: CofreSession, forceCompose = false, mode: Exclude<LoadingMode, null> = forceCompose ? "compose" : "answer") {
+    setLoadingMode(mode);
     setBusy(true);
     try {
       const response = await fetch("/api/elabora", {
@@ -68,6 +109,7 @@ export default function Home() {
       }
     } finally {
       setBusy(false);
+      setLoadingMode(null);
     }
   }
 
@@ -77,7 +119,7 @@ export default function Home() {
     const next = { ...initialSession, originalRequest: draft.trim() };
     setSession(next);
     setDraft("");
-    await requestEngine(next);
+    await requestEngine(next, false, "intent");
   }
 
   async function answer(value = draft) {
@@ -85,14 +127,14 @@ export default function Home() {
     const next = applyAnswer(session, question, value);
     setSession(next);
     setDraft("");
-    await requestEngine(next);
+    await requestEngine(next, false, "answer");
   }
 
   async function skip() {
     if (!question || busy) return;
     const next = { ...session, skipped: [...session.skipped, question.dimension] };
     setSession(next);
-    await requestEngine(next);
+    await requestEngine(next, false, "answer");
   }
 
   function reset() {
@@ -101,6 +143,7 @@ export default function Home() {
     setPrompt("");
     setDraft("");
     setAdjusting(false);
+    setLoadingMode(null);
     setView("intent");
   }
 
@@ -117,7 +160,7 @@ export default function Home() {
     setSession(next);
     setDraft("");
     setAdjusting(false);
-    await requestEngine(next, true);
+    await requestEngine(next, true, "adjust");
   }
 
   function updateAnswer(index: number, answer: string) {
@@ -144,7 +187,7 @@ export default function Home() {
     };
     setSession(next);
     setReviewSession(null);
-    await requestEngine(next, true);
+    await requestEngine(next, true, "review");
   }
 
   function cancelReview() {
@@ -155,6 +198,7 @@ export default function Home() {
   return (
     <main>
       <header><Logo /><div className="enginePill"><span /> COFRE Engine <b>{ENGINE_VERSION}</b></div></header>
+      {busy && loadingMode && <Thinking mode={loadingMode} />}
 
       {view === "intent" && (
         <section className="hero shell">
@@ -164,7 +208,7 @@ export default function Home() {
           <form className="intentCard" onSubmit={start}>
             <label htmlFor="intent">Sua ideia</label>
             <textarea id="intent" autoFocus value={draft} maxLength={12000} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: Quero preparar uma apresentação para convencer a diretoria a investir mais em pesquisa com usuários…" />
-            <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim() || busy}>{busy ? "Entendendo…" : "Continuar"} <span>→</span></button></div>
+            <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim() || busy}>Continuar <span>→</span></button></div>
           </form>
           <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O COFRE identifica apenas o que realmente faz diferença.</p></div>
           <section className="cofreIntro" aria-labelledby="cofre-title">
@@ -194,28 +238,28 @@ export default function Home() {
 
       {view === "interview" && question && (
         <section className="interview shell narrow">
-          <button className="back" onClick={() => setView("intent")}>← Voltar</button>
+          <button className="back" disabled={busy} onClick={() => setView("intent")}>← Voltar</button>
           <div className="progress" aria-label={`Etapa de refinamento ${currentStep}`}><span style={{ width: `${currentStep * 20}%` }} /></div>
           <div className="kicker">{question.eyebrow}</div>
           <h2>{question.text}</h2>
           <p className="lead">{question.hint}</p>
           {!!question.options.length && <div className="chips">{question.options.map((option) => <button key={option} disabled={busy} onClick={() => answer(option)}>{option}</button>)}</div>}
           <div className="answerBox">
-            <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escreva do seu jeito…" />
+            <textarea autoFocus disabled={busy} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escreva do seu jeito…" />
             <button className="primary round" onClick={() => answer()} disabled={!draft.trim() || busy} aria-label="Enviar resposta">→</button>
           </div>
-          <div className="interviewActions"><button disabled={busy} onClick={skip}>Não sei / Pular</button><button disabled={busy} onClick={() => requestEngine(session, true)}>Gerar com o que já temos</button></div>
+          <div className="interviewActions"><button disabled={busy} onClick={skip}>Não sei / Pular</button><button disabled={busy} onClick={() => requestEngine(session, true, "compose")}>Gerar com o que já temos</button></div>
         </section>
       )}
 
       {view === "result" && (
         <section className="result shell">
-          <div className="resultTop"><div><div className="kicker success">✓ Prompt validado</div><h2>Seu Prompt COFRE<br />está pronto.</h2></div><button className="secondary" onClick={reset}>＋ Criar outro</button></div>
+          <div className="resultTop"><div><div className="kicker success">✓ Prompt validado</div><h2>Seu Prompt COFRE<br />está pronto.</h2></div><button className="secondary" disabled={busy} onClick={reset}>＋ Criar outro</button></div>
           <div className="resultGrid">
             <article className="promptCard">
               <div className="promptHead"><span className="universal">◎ Universal</span><span>Pronto para usar em qualquer IA</span></div>
               <pre>{prompt}</pre>
-              <button className="copy" onClick={copyPrompt}>{copied ? "✓ Copiado" : "▣ Copiar prompt"}</button>
+              <button className="copy" disabled={busy} onClick={copyPrompt}>{copied ? "✓ Copiado" : "▣ Copiar prompt"}</button>
             </article>
             <aside>
               <h3>Como ele foi construído</h3>
@@ -223,29 +267,29 @@ export default function Home() {
               <div className="summary">{summary(session).map(([label, value], index) => <div key={label}><i>{index + 1}</i><span><b>{label}</b><small>{value}</small></span></div>)}</div>
             </aside>
           </div>
-          {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary" disabled={busy}>{busy ? "Refinando…" : "Aplicar ajuste"}</button></form> : <div className="resultActions"><button onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button onClick={openReview}>↶ Revisar respostas</button></div>}
+          {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus disabled={busy} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary" disabled={busy}>Aplicar ajuste</button></form> : <div className="resultActions"><button disabled={busy} onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button disabled={busy} onClick={openReview}>↶ Revisar respostas</button></div>}
         </section>
       )}
 
       {view === "review" && reviewSession && (
         <section className="review shell narrow">
-          <button className="back" onClick={cancelReview}>← Voltar ao prompt</button>
+          <button className="back" disabled={busy} onClick={cancelReview}>← Voltar ao prompt</button>
           <div className="kicker">Revise antes de regenerar</div>
           <h2>Suas respostas</h2>
           <p className="lead">Edite o que mudou ou remova uma resposta que não deve fazer parte do prompt.</p>
           <div className="reviewList">
             <article>
               <label htmlFor="original-request">Pedido inicial</label>
-              <textarea id="original-request" value={reviewSession.originalRequest} onChange={(event) => setReviewSession({ ...reviewSession, originalRequest: event.target.value })} />
+              <textarea id="original-request" disabled={busy} value={reviewSession.originalRequest} onChange={(event) => setReviewSession({ ...reviewSession, originalRequest: event.target.value })} />
             </article>
             {reviewSession.answers.map((item, index) => (
               <article key={`${item.question}-${index}`}>
-                <div className="reviewLabel"><label htmlFor={`answer-${index}`}>{item.question}</label><button onClick={() => removeAnswer(index)} aria-label={`Remover resposta: ${item.answer}`}>Remover</button></div>
-                <textarea id={`answer-${index}`} value={item.answer} onChange={(event) => updateAnswer(index, event.target.value)} />
+                <div className="reviewLabel"><label htmlFor={`answer-${index}`}>{item.question}</label><button disabled={busy} onClick={() => removeAnswer(index)} aria-label={`Remover resposta: ${item.answer}`}>Remover</button></div>
+                <textarea id={`answer-${index}`} disabled={busy} value={item.answer} onChange={(event) => updateAnswer(index, event.target.value)} />
               </article>
             ))}
           </div>
-          <div className="reviewActions"><button className="secondary" onClick={cancelReview}>Cancelar</button><button className="primary" disabled={!reviewSession.originalRequest.trim() || busy} onClick={saveReview}>{busy ? "Regenerando…" : "Salvar e regenerar"}</button></div>
+          <div className="reviewActions"><button className="secondary" disabled={busy} onClick={cancelReview}>Cancelar</button><button className="primary" disabled={!reviewSession.originalRequest.trim() || busy} onClick={saveReview}>Salvar e regenerar</button></div>
         </section>
       )}
 
