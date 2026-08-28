@@ -1,9 +1,23 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { CofreSession, ENGINE_VERSION, applyAnswer, composePrompt, nextQuestion, summary } from "@/lib/cofre";
+import { FormEvent, useState } from "react";
+import {
+  CofreSession,
+  ENGINE_VERSION,
+  Question,
+  applyAnswer,
+  composePrompt,
+  nextQuestion as fallbackNextQuestion,
+  summary,
+} from "@/lib/cofre";
 
 type View = "intent" | "interview" | "result" | "review";
+type EngineReply = {
+  source: "llm" | "fallback";
+  question: Question | null;
+  prompt: string | null;
+  assumptions: string[];
+};
 
 const initialSession: CofreSession = { originalRequest: "", answers: [], skipped: [] };
 
@@ -14,40 +28,77 @@ function Logo() {
 export default function Home() {
   const [view, setView] = useState<View>("intent");
   const [session, setSession] = useState<CofreSession>(initialSession);
+  const [question, setQuestion] = useState<Question | null>(null);
+  const [prompt, setPrompt] = useState("");
   const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [reviewSession, setReviewSession] = useState<CofreSession | null>(null);
-  const question = useMemo(() => nextQuestion(session), [session]);
-  const prompt = useMemo(() => composePrompt(session), [session]);
+  const [busy, setBusy] = useState(false);
   const currentStep = question ? ["contexto", "objetivo", "formato", "restricoes", "exemplo"].indexOf(question.dimension) + 1 : 5;
 
-  function start(event: FormEvent) {
+  async function requestEngine(nextSession: CofreSession, forceCompose = false) {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/elabora", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session: nextSession, forceCompose }),
+      });
+      if (!response.ok) throw new Error("ENGINE_REQUEST_FAILED");
+      const result = await response.json() as EngineReply;
+      setQuestion(result.question);
+      if (result.prompt) {
+        setPrompt(result.prompt);
+        setView("result");
+      } else if (result.question) {
+        setView("interview");
+      } else {
+        setPrompt(composePrompt(nextSession));
+        setView("result");
+      }
+    } catch {
+      const fallbackQuestion = forceCompose ? null : fallbackNextQuestion(nextSession);
+      setQuestion(fallbackQuestion);
+      if (fallbackQuestion) {
+        setView("interview");
+      } else {
+        setPrompt(composePrompt(nextSession));
+        setView("result");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function start(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim()) return;
+    if (!draft.trim() || busy) return;
     const next = { ...initialSession, originalRequest: draft.trim() };
     setSession(next);
     setDraft("");
-    setView(nextQuestion(next) ? "interview" : "result");
+    await requestEngine(next);
   }
 
-  function answer(value = draft) {
-    if (!question || !value.trim()) return;
+  async function answer(value = draft) {
+    if (!question || !value.trim() || busy) return;
     const next = applyAnswer(session, question, value);
     setSession(next);
     setDraft("");
-    if (!nextQuestion(next)) setView("result");
+    await requestEngine(next);
   }
 
-  function skip() {
-    if (!question) return;
+  async function skip() {
+    if (!question || busy) return;
     const next = { ...session, skipped: [...session.skipped, question.dimension] };
     setSession(next);
-    if (!nextQuestion(next)) setView("result");
+    await requestEngine(next);
   }
 
   function reset() {
     setSession(initialSession);
+    setQuestion(null);
+    setPrompt("");
     setDraft("");
     setAdjusting(false);
     setView("intent");
@@ -59,12 +110,14 @@ export default function Home() {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  function adjust(event: FormEvent) {
+  async function adjust(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim()) return;
-    setSession({ ...session, originalRequest: `${session.originalRequest}\n\nAjuste solicitado: ${draft.trim()}` });
+    if (!draft.trim() || busy) return;
+    const next = { ...session, originalRequest: `${session.originalRequest}\n\nAjuste solicitado: ${draft.trim()}` };
+    setSession(next);
     setDraft("");
     setAdjusting(false);
+    await requestEngine(next, true);
   }
 
   function updateAnswer(index: number, answer: string) {
@@ -82,11 +135,16 @@ export default function Home() {
     setView("review");
   }
 
-  function saveReview() {
-    if (!reviewSession) return;
-    setSession({ ...reviewSession, originalRequest: reviewSession.originalRequest.trim(), answers: reviewSession.answers.filter((item) => item.answer.trim()).map((item) => ({ ...item, answer: item.answer.trim() })) });
+  async function saveReview() {
+    if (!reviewSession || busy) return;
+    const next = {
+      ...reviewSession,
+      originalRequest: reviewSession.originalRequest.trim(),
+      answers: reviewSession.answers.filter((item) => item.answer.trim()).map((item) => ({ ...item, answer: item.answer.trim() })),
+    };
+    setSession(next);
     setReviewSession(null);
-    setView("result");
+    await requestEngine(next, true);
   }
 
   function cancelReview() {
@@ -106,7 +164,7 @@ export default function Home() {
           <form className="intentCard" onSubmit={start}>
             <label htmlFor="intent">Sua ideia</label>
             <textarea id="intent" autoFocus value={draft} maxLength={12000} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: Quero preparar uma apresentação para convencer a diretoria a investir mais em pesquisa com usuários…" />
-            <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim()}>Continuar <span>→</span></button></div>
+            <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim() || busy}>{busy ? "Entendendo…" : "Continuar"} <span>→</span></button></div>
           </form>
           <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O COFRE identifica apenas o que realmente faz diferença.</p></div>
           <section className="cofreIntro" aria-labelledby="cofre-title">
@@ -137,16 +195,16 @@ export default function Home() {
       {view === "interview" && question && (
         <section className="interview shell narrow">
           <button className="back" onClick={() => setView("intent")}>← Voltar</button>
-          <div className="progress" aria-label={`Passo ${currentStep} de 5`}><span style={{ width: `${currentStep * 20}%` }} /></div>
+          <div className="progress" aria-label={`Etapa de refinamento ${currentStep}`}><span style={{ width: `${currentStep * 20}%` }} /></div>
           <div className="kicker">{question.eyebrow}</div>
           <h2>{question.text}</h2>
           <p className="lead">{question.hint}</p>
-          {!!question.options.length && <div className="chips">{question.options.map((option) => <button key={option} onClick={() => answer(option)}>{option}</button>)}</div>}
+          {!!question.options.length && <div className="chips">{question.options.map((option) => <button key={option} disabled={busy} onClick={() => answer(option)}>{option}</button>)}</div>}
           <div className="answerBox">
             <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escreva do seu jeito…" />
-            <button className="primary round" onClick={() => answer()} disabled={!draft.trim()} aria-label="Enviar resposta">→</button>
+            <button className="primary round" onClick={() => answer()} disabled={!draft.trim() || busy} aria-label="Enviar resposta">→</button>
           </div>
-          <div className="interviewActions"><button onClick={skip}>Não sei / Pular</button><button onClick={() => setView("result")}>Gerar com o que já temos</button></div>
+          <div className="interviewActions"><button disabled={busy} onClick={skip}>Não sei / Pular</button><button disabled={busy} onClick={() => requestEngine(session, true)}>Gerar com o que já temos</button></div>
         </section>
       )}
 
@@ -165,7 +223,7 @@ export default function Home() {
               <div className="summary">{summary(session).map(([label, value], index) => <div key={label}><i>{index + 1}</i><span><b>{label}</b><small>{value}</small></span></div>)}</div>
             </aside>
           </div>
-          {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary">Aplicar ajuste</button></form> : <div className="resultActions"><button onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button onClick={openReview}>↶ Revisar respostas</button></div>}
+          {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary" disabled={busy}>{busy ? "Refinando…" : "Aplicar ajuste"}</button></form> : <div className="resultActions"><button onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button onClick={openReview}>↶ Revisar respostas</button></div>}
         </section>
       )}
 
@@ -187,7 +245,7 @@ export default function Home() {
               </article>
             ))}
           </div>
-          <div className="reviewActions"><button className="secondary" onClick={cancelReview}>Cancelar</button><button className="primary" disabled={!reviewSession.originalRequest.trim()} onClick={saveReview}>Salvar e regenerar</button></div>
+          <div className="reviewActions"><button className="secondary" onClick={cancelReview}>Cancelar</button><button className="primary" disabled={!reviewSession.originalRequest.trim() || busy} onClick={saveReview}>{busy ? "Regenerando…" : "Salvar e regenerar"}</button></div>
         </section>
       )}
 
