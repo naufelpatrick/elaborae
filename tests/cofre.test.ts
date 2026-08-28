@@ -14,7 +14,7 @@ function respond(state: CofreSession, answer: string) {
 test("workshop vago inicia pela substância", () => {
   const analysis = analyzeSession(createSession("Quero preparar um workshop."));
   assert.equal(analysis.nextAction, "ASK");
-  assert.match(analysis.nextQuestion?.text ?? "", /tema.*fazer ou decidir|tema.*decidir/i);
+  assert.match(analysis.nextQuestion?.text ?? "", /sobre o que será esse workshop.*quem vai participar/i);
   assert.equal(analysis.dimensions.objetivo, "partial");
 });
 
@@ -57,4 +57,31 @@ test("workshop profundo chega a READY e preserva fatos", () => {
 test("pedido claro pode compor sem entrevista", () => {
   const analysis = analyzeSession(createSession("Crie uma tabela comparativa para a diretoria decidir entre os fornecedores A e B, usando custo total e prazo de implantação como critérios."));
   assert.equal(analysis.nextAction, "COMPOSE");
+});
+
+test("conversa natural de workshop termina assim que o núcleo fica suficiente", () => {
+  let state = createSession("Quero preparar um workshop.");
+  const turns = [
+    "Sobre IA, para minha equipe.",
+    "Quero que consigam decidir onde usar IA no trabalho.",
+    "Alguns usam ChatGPT, mas sem muito método.",
+    "Duas horas.",
+  ];
+  const questions: string[] = [];
+
+  for (const turn of turns) {
+    const analysis = analyzeSession(state);
+    assert.equal(analysis.nextAction, "ASK");
+    questions.push(analysis.nextQuestion!.text);
+    state = applyAnswer(state, analysis.nextQuestion!, turn);
+  }
+
+  assert.match(questions[0], /sobre o que.*quem vai participar/i);
+  assert.match(questions[1], /essa equipe.*fazer ou decidir/i);
+  assert.match(questions[2], /já usa.*ou ainda está começando/i);
+  assert.match(questions[3], /quanto tempo.*introdutório.*mão na massa/i);
+  assert.equal(analyzeSession(state).nextAction, "COMPOSE");
+  assert.match(composePrompt(state), /onde usar IA no trabalho/i);
+  assert.match(composePrompt(state), /ChatGPT.*sem muito método/i);
+  assert.match(composePrompt(state), /Duas horas/i);
 });
