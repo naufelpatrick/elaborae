@@ -10,6 +10,20 @@ const RequestSchema = z.object({
   forceCompose: z.boolean().optional().default(false),
 });
 
+export async function GET() {
+  const hasApiKey = Boolean(process.env.OPENROUTER_API_KEY?.trim());
+  const model = process.env.OPENROUTER_MODEL?.trim() || null;
+  return NextResponse.json({
+    ok: hasApiKey && Boolean(model),
+    openrouter: {
+      hasApiKey,
+      hasModel: Boolean(model),
+      model,
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown",
+    },
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const body = RequestSchema.parse(await request.json());
