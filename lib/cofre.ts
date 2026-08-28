@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ENGINE_VERSION = "0.2.2" as const;
+export const ENGINE_VERSION = "0.3.0" as const;
 
 export const DimensionSchema = z.enum(["contexto", "objetivo", "formato", "restricoes", "exemplo"]);
 export type Dimension = z.infer<typeof DimensionSchema>;
@@ -13,7 +13,7 @@ export type CofreSession = z.infer<typeof CofreSessionSchema>;
 export const QuestionSchema = z.object({ dimension: DimensionSchema, eyebrow: z.string(), text: z.string().min(1), hint: z.string(), options: z.array(z.string()), type: z.enum(["discovery", "deepening", "choice", "confirmation", "conflict_resolution"]) });
 export type Question = z.infer<typeof QuestionSchema>;
 export const EngineAnalysisSchema = z.object({
-  engineVersion: z.literal(ENGINE_VERSION), promptVersion: z.literal("orchestrator-0.2.2"),
+  engineVersion: z.literal(ENGINE_VERSION), promptVersion: z.literal("orchestrator-0.3.0"),
   artifact: z.enum(["workshop", "apresentacao", "aula", "campanha", "analise", "plano", "texto", "codigo", "generic"]),
   dimensions: z.record(DimensionSchema, DimensionStatusSchema),
   sufficiency: z.enum(["NOT_READY", "ASK_IF_HIGH_VALUE", "READY", "READY_WITH_ASSUMPTION"]),
@@ -28,7 +28,6 @@ const cosmeticOnly = /^(?:quero\s+)?(?:algo\s+)?(?:profissional|estrat[eé]gico|
 const dontKnow = /^(?:n[aã]o\s+sei|pular|skip)$/i;
 
 const allText = (session: CofreSession) => [session.originalRequest, ...session.answers.map((item) => item.answer)].join("\n");
-const latest = (session: CofreSession) => session.answers.at(-1)?.answer.trim() ?? session.originalRequest.trim();
 const dimensionTexts = (session: CofreSession, dimension: Dimension) => session.answers.filter((item) => item.dimension === dimension).map((item) => item.answer.trim());
 
 function detectArtifact(text: string): EngineAnalysis["artifact"] {
@@ -41,13 +40,6 @@ function detectArtifact(text: string): EngineAnalysis["artifact"] {
   if (/\b(c[oó]digo|sistema|aplica[cç][aã]o|api)\b/i.test(text)) return "codigo";
   if (/\b(texto|artigo|post|e-?mail|roteiro)\b/i.test(text)) return "texto";
   return "generic";
-}
-
-function hasTopic(session: CofreSession) {
-  const text = allText(session);
-  const explicit = /\b(?:workshop|oficina|treinamento)\s+(?:sobre|de)\s+[^.\n]{2,}/i.test(text) || /\b(?:tema|assunto)\s*(?:é|:|sobre)\s*[^.\n]{2,}/i.test(text) || /\bsobre\s+(?!isso|esse|o assunto)[^.\n]{2,}/i.test(text);
-  if (explicit) return true;
-  return dimensionTexts(session, "contexto").some((value) => value.split(/\s+/).length >= 3 && !genericAudience.test(value));
 }
 
 function objectiveDepth(values: string[], text: string): DimensionStatus {
@@ -86,39 +78,22 @@ function makeQuestion(dimension: Dimension, type: Question["type"], eyebrow: str
   return QuestionSchema.parse({ dimension, type, eyebrow, text, hint, options });
 }
 
-function topicLabel(text: string) {
-  const match = text.match(/\b(?:workshop|oficina|treinamento)\s+(?:sobre|de)\s+([^.,\n]+)/i) || text.match(/\bsobre\s+([^.,\n]+)/i);
-  return match?.[1]?.trim() || "o tema";
-}
+const interviewOrder: Dimension[] = ["contexto", "objetivo", "formato", "restricoes", "exemplo"];
+const stepName: Record<Dimension, string> = { contexto: "Contexto", objetivo: "Objetivo", formato: "Formato", restricoes: "Restrições", exemplo: "Exemplo" };
 
-function workshopQuestion(session: CofreSession, states: Record<Dimension, DimensionStatus>): Question | null {
-  const text = allText(session);
-  const last = latest(session);
-  const canAsk = (dimension: Dimension) => !session.skipped.includes(dimension);
-  if (canAsk("objetivo") && (vagueObjective.test(last) || /\btomar\s+uma\s+decis[aã]o\b/i.test(last))) return makeQuestion("objetivo", "deepening", "Vamos tornar o resultado concreto", `Que decisão você quer que ${/equipe/i.test(text) ? "sua equipe" : "as pessoas"} consiga tomar ao final do workshop?`, "Diga qual escolha, prioridade ou caminho precisa ficar claro.");
-  if (canAsk("contexto") && !hasTopic(session)) return makeQuestion("contexto", "discovery", "Quero entender melhor", "Legal. Sobre o que será esse workshop e quem vai participar?", "Pode responder do seu jeito; tema e participantes já ajudam bastante.");
-  if (canAsk("objetivo") && states.objetivo !== "sufficient") return makeQuestion("objetivo", "deepening", "E depois do workshop?", `O que você gostaria que ${/equipe/i.test(text) ? "essa equipe" : "as pessoas"} conseguisse fazer ou decidir depois do workshop sobre ${topicLabel(text)}?`, "Busque uma mudança ou decisão que seja possível reconhecer.");
-  if (canAsk("contexto") && states.contexto === "missing") return makeQuestion("contexto", "discovery", "Quero calibrar a conversa", `Quem vai participar e quanto essas pessoas já conhecem sobre ${topicLabel(text)}?`, "Isso muda a profundidade e o tipo de atividade.");
-  if (canAsk("contexto") && states.contexto === "partial") return makeQuestion("contexto", "deepening", "Entendi. E hoje?", `${/equipe/i.test(text) ? "Essa equipe" : "Essas pessoas"} já usa ${topicLabel(text)} no trabalho ou ainda está começando?`, "Quero entender o ponto de partida, sem transformar isso em formulário.");
-  if (/\b(?:profissional|tom profissional)\b/i.test(last)) return makeQuestion("restricoes", "deepening", "Quando você diz profissional", "Você está pensando em algo mais executivo e direto ou mais técnico e detalhado?", "Escolha o que melhor representa o uso real.", ["Executivo e direto", "Técnico e detalhado"]);
-  if (/\bdin[aâ]mico\b/i.test(last)) return makeQuestion("formato", "deepening", "Quando você diz dinâmico", "Você imagina mais atividades práticas, mais participação das pessoas ou menos exposição?", "Isso ajuda a traduzir o adjetivo em uma dinâmica concreta.", ["Mais prática", "Mais participação", "Menos exposição"]);
-  if (canAsk("restricoes") && states.restricoes === "missing") return makeQuestion("restricoes", "discovery", "Só mais uma coisa que muda o desenho", "Quanto tempo vocês terão? Quero entender se faz sentido algo mais introdutório ou mais mão na massa.", "A duração determina a profundidade possível.", ["1 hora", "2 horas", "Meio período"]);
-  return null;
-}
+function fiveStepQuestion(session: CofreSession, artifact: EngineAnalysis["artifact"]): Question | null {
+  const completed = new Set<Dimension>([...session.answers.map((answer) => answer.dimension), ...session.skipped]);
+  const dimension = interviewOrder.find((item) => !completed.has(item));
+  if (!dimension) return null;
+  const step = interviewOrder.indexOf(dimension) + 1;
+  const eyebrow = `Passo ${step} de 5 · ${stepName[dimension]}`;
+  const isWorkshop = artifact === "workshop";
 
-function genericQuestion(session: CofreSession, states: Record<Dimension, DimensionStatus>, artifact: EngineAnalysis["artifact"]): Question | null {
-  const last = latest(session);
-  if (vagueObjective.test(last) || states.objetivo === "partial") {
-    if (/melhorar/i.test(last)) return makeQuestion("objetivo", "deepening", "Vamos concretizar essa mudança", `O que está acontecendo hoje em ${last.replace(/^(?:quero\s+)?melhorar\s*/i, "").replace(/[.]$/, "") || "isso"} que você gostaria que fosse diferente?`, "Descreva a mudança que indicaria sucesso.");
-    if (/decis/i.test(last)) return makeQuestion("objetivo", "deepening", "Vamos dar foco à decisão", "Que decisão exatamente precisa ficar mais clara?", "Nomeie a escolha que essa entrega deve apoiar.");
-    return makeQuestion("objetivo", "deepening", "Vamos tornar o resultado concreto", "O que você quer que as pessoas consigam fazer, decidir ou mudar depois disso?", "Procure um resultado que seja possível observar.");
-  }
-  if (states.objetivo === "missing") return makeQuestion("objetivo", "discovery", "Vamos dar foco ao resultado", `O que precisa acontecer como consequência ${artifact === "apresentacao" ? "dessa apresentação" : "desse trabalho"}?`, "Descreva a decisão, mudança ou entrega que você espera.");
-  if (genericAudience.test(last) || states.contexto === "partial") return makeQuestion("contexto", "deepening", "Só o contexto que muda a resposta", `Quando você diz “${last.replace(/[.]$/, "")}”, quem são essas pessoas e o que elas já sabem sobre o assunto?`, "Uma descrição curta já ajuda a calibrar a resposta.");
-  if (states.contexto === "missing" && ["apresentacao", "aula", "campanha", "texto"].includes(artifact)) return makeQuestion("contexto", "discovery", "Só o contexto que faz diferença", "Quem vai usar ou receber esse resultado?", "Informe apenas o público que muda a forma da resposta.");
-  if (states.restricoes === "missing" && ["apresentacao", "aula"].includes(artifact)) return makeQuestion("restricoes", "discovery", "Um limite que muda a execução", artifact === "apresentacao" ? "Quanto tempo você terá para apresentar?" : "Quanto tempo estará disponível para a atividade?", "Tempo é uma restrição funcional, não apenas acabamento.");
-  if (states.formato === "missing") return makeQuestion("formato", "choice", "Vamos combinar uma entrega utilizável", "Como você pretende usar esse resultado na prática?", "Isso ajuda a escolher a estrutura sem impor um formato artificial.");
-  return null;
+  if (dimension === "contexto") return makeQuestion("contexto", "discovery", eyebrow, isWorkshop ? "Para eu entender o cenário: sobre o que será o workshop e quem vai participar?" : "Em que situação você vai usar isso e quem estará envolvido?", "Conte apenas o contexto que pode mudar a resposta.");
+  if (dimension === "objetivo") return makeQuestion("objetivo", "deepening", eyebrow, isWorkshop ? "Quando o workshop terminar, o que você quer que os participantes consigam fazer ou decidir?" : "O que precisa acontecer para você considerar que esse resultado funcionou?", "Descreva o resultado prático que você espera.");
+  if (dimension === "formato") return makeQuestion("formato", "choice", eyebrow, isWorkshop ? "O que você precisa ter em mãos para conduzir o workshop?" : "Como essa entrega precisa chegar para ser útil na prática?", isWorkshop ? "Por exemplo: agenda, roteiro de facilitação, atividades ou materiais." : "Diga a estrutura ou o tipo de entrega que você pretende usar.", isWorkshop ? ["Agenda + roteiro", "Plano com atividades", "Kit completo"] : []);
+  if (dimension === "restricoes") return makeQuestion("restricoes", "discovery", eyebrow, isWorkshop ? "Que limites preciso respeitar ao montar esse workshop?" : "Existe algum limite ou condição que a resposta precisa respeitar?", isWorkshop ? "Pode incluir duração, número de participantes, recursos disponíveis ou algo que não pode acontecer." : "Considere prazo, tamanho, tom, orçamento ou algo que deve ser evitado.");
+  return makeQuestion("exemplo", "confirmation", eyebrow, "Existe algum exemplo ou referência que represente o resultado que você espera?", "Se não houver uma referência útil, pode escolher “Não sei / Pular”.");
 }
 
 export function analyzeSession(rawSession: CofreSession): EngineAnalysis {
@@ -132,13 +107,12 @@ export function analyzeSession(rawSession: CofreSession): EngineAnalysis {
     restricoes: restrictionsDepth(dimensionTexts(session, "restricoes"), text, artifact),
     exemplo: "not_required",
   };
-  const proposed = artifact === "workshop" ? workshopQuestion(session, dimensions) : genericQuestion(session, dimensions, artifact);
-  const next = session.answers.length >= 7 ? null : proposed;
+  const next = fiveStepQuestion(session, artifact);
   const gaps = (Object.entries(dimensions) as [Dimension, DimensionStatus][])
     .filter(([, status]) => ["missing", "partial", "contradictory"].includes(status))
     .map(([target, status]) => ({ target, severity: target === "objetivo" || (artifact === "workshop" && ["contexto", "restricoes"].includes(target)) ? "critical" as const : "relevant" as const, description: `${target} permanece ${status}; ainda há ambiguidade com impacto na execução.` }));
   return EngineAnalysisSchema.parse({
-    engineVersion: ENGINE_VERSION, promptVersion: "orchestrator-0.2.2", artifact, dimensions,
+    engineVersion: ENGINE_VERSION, promptVersion: "orchestrator-0.3.0", artifact, dimensions,
     sufficiency: next ? (gaps.some((gap) => gap.severity === "critical") ? "NOT_READY" : "ASK_IF_HIGH_VALUE") : "READY",
     nextAction: next ? "ASK" : "COMPOSE", nextQuestion: next, gaps,
   });
@@ -150,11 +124,7 @@ export function applyAnswer(rawSession: CofreSession, currentQuestion: Question,
   const session = CofreSessionSchema.parse(rawSession);
   const answer = rawAnswer.trim();
   if (!answer || dontKnow.test(answer)) return CofreSessionSchema.parse({ ...session, skipped: [...new Set([...session.skipped, currentQuestion.dimension])] });
-  let dimension = currentQuestion.dimension;
-  const hasObservableOutcome = /\b(?:identif\w*|produz\w*|cri\w*|decid\w*|prioriz\w*|aprov\w*|aument\w*|reduz\w*|consig\w*|sai(?:a|am|r)?\s+com)\b/i.test(answer);
-  if (genericAudience.test(answer) || (!hasObservableOutcome && /\b(?:equipe|clientes?|alunos?|professores?|diretoria|designers?|gestores?|participantes?)\b/i.test(answer))) dimension = "contexto";
-  else if (/\b(?:\d+\s*(?:minutos?|horas?|dias?|semanas?)|prazo|or[cç]amento|limite)\b/i.test(answer)) dimension = "restricoes";
-  const next = { ...session, answers: [...session.answers, { question: currentQuestion.text, answer, dimension }] };
+  const next = { ...session, answers: [...session.answers, { question: currentQuestion.text, answer, dimension: currentQuestion.dimension }] };
   return CofreSessionSchema.parse(next);
 }
 

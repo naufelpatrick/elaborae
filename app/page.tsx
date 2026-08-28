@@ -20,6 +20,7 @@ export default function Home() {
   const [reviewSession, setReviewSession] = useState<CofreSession | null>(null);
   const question = useMemo(() => nextQuestion(session), [session]);
   const prompt = useMemo(() => composePrompt(session), [session]);
+  const currentStep = question ? ["contexto", "objetivo", "formato", "restricoes", "exemplo"].indexOf(question.dimension) + 1 : 5;
 
   function start(event: FormEvent) {
     event.preventDefault();
@@ -136,7 +137,7 @@ export default function Home() {
       {view === "interview" && question && (
         <section className="interview shell narrow">
           <button className="back" onClick={() => setView("intent")}>← Voltar</button>
-          <div className="progress"><span style={{ width: `${Math.min(88, 24 + session.answers.length * 18)}%` }} /></div>
+          <div className="progress" aria-label={`Passo ${currentStep} de 5`}><span style={{ width: `${currentStep * 20}%` }} /></div>
           <div className="kicker">{question.eyebrow}</div>
           <h2>{question.text}</h2>
           <p className="lead">{question.hint}</p>

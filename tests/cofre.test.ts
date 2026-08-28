@@ -1,108 +1,67 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { analyzeSession, applyAnswer, composePrompt } from "../lib/cofre.ts";
-import type { CofreSession } from "../lib/cofre.ts";
+import type { CofreSession, Dimension } from "../lib/cofre.ts";
 
 const createSession = (originalRequest: string): CofreSession => ({ originalRequest, answers: [], skipped: [] });
 
-function respond(state: CofreSession, answer: string) {
-  const analysis = analyzeSession(state);
-  assert.ok(analysis.nextQuestion, "A pergunta seguinte deveria existir");
-  return applyAnswer(state, analysis.nextQuestion, answer);
-}
-
-test("workshop vago inicia pela substância", () => {
-  const analysis = analyzeSession(createSession("Quero preparar um workshop."));
-  assert.equal(analysis.nextAction, "ASK");
-  assert.match(analysis.nextQuestion?.text ?? "", /sobre o que será esse workshop.*quem vai participar/i);
-  assert.equal(analysis.dimensions.objetivo, "partial");
-});
-
-test("rótulos vagos não tornam o workshop suficiente", () => {
+test("entrevista segue os cinco passos do COFRE uma única vez", () => {
   let state = createSession("Quero preparar um workshop.");
-  state = respond(state, "Para minha equipe.");
-  let analysis = analyzeSession(state);
-  assert.equal(analysis.nextAction, "ASK");
-  assert.notEqual(analysis.dimensions.contexto, "sufficient");
-
-  state = applyAnswer(state, analysis.nextQuestion!, "Tomar uma decisão.");
-  analysis = analyzeSession(state);
-  assert.equal(analysis.dimensions.objetivo, "partial");
-  assert.match(analysis.nextQuestion?.text ?? "", /que decisão/i);
-
-  state = applyAnswer(state, analysis.nextQuestion!, "Texto objetivo.");
-  analysis = analyzeSession(state);
-  assert.equal(analysis.nextAction, "ASK");
-  assert.notEqual(analysis.dimensions.formato, "sufficient");
-
-  state = applyAnswer(state, analysis.nextQuestion!, "Tom profissional.");
-  assert.equal(analyzeSession(state).nextAction, "ASK");
-});
-
-test("workshop profundo chega a READY e preserva fatos", () => {
-  let state = createSession("Quero preparar um workshop sobre IA.");
-  state = respond(state, "Quero que a equipe identifique usos de IA no processo e saia com três casos de uso priorizados.");
-  state = respond(state, "É uma equipe de designers com contato básico com IA.");
-  state = respond(state, "Teremos 2 horas.");
-  const analysis = analyzeSession(state);
-  assert.equal(analysis.nextAction, "COMPOSE");
-  assert.equal(analysis.sufficiency, "READY");
-  const prompt = composePrompt(state);
-  assert.match(prompt, /três casos de uso priorizados/i);
-  assert.match(prompt, /designers/i);
-  assert.match(prompt, /2 horas/i);
-  assert.doesNotMatch(prompt, /raciocínio privado|quando faltar/i);
-});
-
-test("pedido claro pode compor sem entrevista", () => {
-  const analysis = analyzeSession(createSession("Crie uma tabela comparativa para a diretoria decidir entre os fornecedores A e B, usando custo total e prazo de implantação como critérios."));
-  assert.equal(analysis.nextAction, "COMPOSE");
-});
-
-test("conversa natural de workshop termina assim que o núcleo fica suficiente", () => {
-  let state = createSession("Quero preparar um workshop.");
-  const turns = [
-    "Sobre IA, para minha equipe.",
-    "Quero que consigam decidir onde usar IA no trabalho.",
-    "Alguns usam ChatGPT, mas sem muito método.",
-    "Duas horas.",
+  const answers = [
+    "Será sobre Jobs to Be Done para designers de produto.",
+    "Quero que consigam aplicar a metodologia no dia a dia.",
+    "Um roteiro com agenda e atividades práticas.",
+    "Duas horas, para no máximo 15 participantes.",
+    "Use como referência um workshop mão na massa.",
   ];
+  const expected: Dimension[] = ["contexto", "objetivo", "formato", "restricoes", "exemplo"];
   const questions: string[] = [];
 
-  for (const turn of turns) {
+  for (const [index, answer] of answers.entries()) {
     const analysis = analyzeSession(state);
     assert.equal(analysis.nextAction, "ASK");
+    assert.equal(analysis.nextQuestion?.dimension, expected[index]);
+    assert.match(analysis.nextQuestion?.eyebrow ?? "", new RegExp(`Passo ${index + 1} de 5`, "i"));
     questions.push(analysis.nextQuestion!.text);
-    state = applyAnswer(state, analysis.nextQuestion!, turn);
+    state = applyAnswer(state, analysis.nextQuestion!, answer);
   }
 
-  assert.match(questions[0], /sobre o que.*quem vai participar/i);
-  assert.match(questions[1], /essa equipe.*fazer ou decidir/i);
-  assert.match(questions[2], /já usa.*ou ainda está começando/i);
-  assert.match(questions[3], /quanto tempo.*introdutório.*mão na massa/i);
+  assert.equal(new Set(questions).size, 5);
   assert.equal(analyzeSession(state).nextAction, "COMPOSE");
-  assert.match(composePrompt(state), /onde usar IA no trabalho/i);
-  assert.match(composePrompt(state), /ChatGPT.*sem muito método/i);
-  assert.match(composePrompt(state), /Duas horas/i);
+  assert.equal(analyzeSession(state).nextQuestion, null);
 });
 
-test("resposta livre sobre o tema avança sem repetir a pergunta", () => {
+test("respostas permanecem na dimensão que foi perguntada", () => {
   let state = createSession("Quero preparar um workshop.");
-  const first = analyzeSession(state).nextQuestion!;
-  state = applyAnswer(state, first, "Jobs to Be Done para gerentes de produto e participantes de pesquisa.");
-  const second = analyzeSession(state).nextQuestion!;
-
-  assert.notEqual(second.text, first.text);
-  assert.equal(second.dimension, "objetivo");
-  assert.match(second.text, /fazer ou decidir/i);
+  for (const answer of ["Equipe de produto", "Duas horas", "Duas horas", "Formato executivo", "Sem exemplo"]) {
+    const question = analyzeSession(state).nextQuestion!;
+    state = applyAnswer(state, question, answer);
+  }
+  assert.deepEqual(state.answers.map((answer) => answer.dimension), ["contexto", "objetivo", "formato", "restricoes", "exemplo"]);
 });
 
-test("pular uma pergunta impede que ela reapareça", () => {
-  const state = createSession("Quero preparar um workshop.");
-  const first = analyzeSession(state).nextQuestion!;
-  const skipped = { ...state, skipped: [first.dimension] };
-  const second = analyzeSession(skipped).nextQuestion;
+test("pular avança para a etapa seguinte sem repetir", () => {
+  let state = createSession("Quero preparar um workshop.");
+  const seen: Dimension[] = [];
+  for (let index = 0; index < 5; index += 1) {
+    const question = analyzeSession(state).nextQuestion!;
+    seen.push(question.dimension);
+    state = { ...state, skipped: [...state.skipped, question.dimension] };
+  }
+  assert.deepEqual(seen, ["contexto", "objetivo", "formato", "restricoes", "exemplo"]);
+  assert.equal(analyzeSession(state).nextAction, "COMPOSE");
+});
 
-  assert.notEqual(second?.text, first.text);
-  assert.notEqual(second?.dimension, first.dimension);
+test("prompt final contém as cinco dimensões respondidas", () => {
+  let state = createSession("Quero preparar um workshop.");
+  for (const answer of ["Equipe de design", "Aplicar JTBD", "Roteiro", "Duas horas", "Workshop da empresa"]) {
+    const question = analyzeSession(state).nextQuestion!;
+    state = applyAnswer(state, question, answer);
+  }
+  const prompt = composePrompt(state);
+  assert.match(prompt, /Contexto de uso: Equipe de design/i);
+  assert.match(prompt, /Resultado esperado: Aplicar JTBD/i);
+  assert.match(prompt, /Formato da entrega: Roteiro/i);
+  assert.match(prompt, /Critérios e limites: Duas horas/i);
+  assert.match(prompt, /Referência útil: Workshop da empresa/i);
 });
