@@ -143,12 +143,18 @@ export function composePrompt(rawSession: CofreSession): string {
 
 export function summary(rawSession: CofreSession) {
   const session = CofreSessionSchema.parse(rawSession);
+  const analysis = analyzeSession(session);
   const lookup = (dimension: Dimension) => session.answers.filter((item) => item.dimension === dimension).map((item) => item.answer).join("; ");
+  const fromOriginal = (dimension: Dimension, fallback: string) => {
+    const status = analysis.dimensions[dimension];
+    return status === "sufficient" || status === "partial" ? "Compreendido a partir do pedido inicial" : fallback;
+  };
+
   return [
-    ["Contexto", lookup("contexto") || "Preservado a partir do pedido original"],
-    ["Objetivo", lookup("objetivo") || session.originalRequest],
-    ["Formato", lookup("formato") || "Formato adequado à natureza da tarefa"],
-    ["Restrições", lookup("restricoes") || "Sem restrições adicionais"],
-    ["Exemplo", lookup("exemplo") || "Não necessário"],
+    ["Contexto", lookup("contexto") || fromOriginal("contexto", "Sem contexto adicional necessário")],
+    ["Objetivo", lookup("objetivo") || fromOriginal("objetivo", "Objetivo preservado a partir do pedido")],
+    ["Formato", lookup("formato") || (analysis.dimensions.formato === "sufficient" ? "Definido no pedido inicial" : "Adaptado à natureza da tarefa")],
+    ["Restrições", lookup("restricoes") || (analysis.dimensions.restricoes === "sufficient" ? "Restrições identificadas no pedido inicial" : "Nenhuma restrição adicional necessária")],
+    ["Exemplo", lookup("exemplo") || "Não foi necessário solicitar referência"],
   ];
 }
