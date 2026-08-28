@@ -85,3 +85,24 @@ test("conversa natural de workshop termina assim que o núcleo fica suficiente",
   assert.match(composePrompt(state), /ChatGPT.*sem muito método/i);
   assert.match(composePrompt(state), /Duas horas/i);
 });
+
+test("resposta livre sobre o tema avança sem repetir a pergunta", () => {
+  let state = createSession("Quero preparar um workshop.");
+  const first = analyzeSession(state).nextQuestion!;
+  state = applyAnswer(state, first, "Jobs to Be Done para gerentes de produto e participantes de pesquisa.");
+  const second = analyzeSession(state).nextQuestion!;
+
+  assert.notEqual(second.text, first.text);
+  assert.equal(second.dimension, "objetivo");
+  assert.match(second.text, /fazer ou decidir/i);
+});
+
+test("pular uma pergunta impede que ela reapareça", () => {
+  const state = createSession("Quero preparar um workshop.");
+  const first = analyzeSession(state).nextQuestion!;
+  const skipped = { ...state, skipped: [first.dimension] };
+  const second = analyzeSession(skipped).nextQuestion;
+
+  assert.notEqual(second?.text, first.text);
+  assert.notEqual(second?.dimension, first.dimension);
+});

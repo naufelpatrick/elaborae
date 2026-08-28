@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ENGINE_VERSION = "0.2.1" as const;
+export const ENGINE_VERSION = "0.2.2" as const;
 
 export const DimensionSchema = z.enum(["contexto", "objetivo", "formato", "restricoes", "exemplo"]);
 export type Dimension = z.infer<typeof DimensionSchema>;
@@ -13,7 +13,7 @@ export type CofreSession = z.infer<typeof CofreSessionSchema>;
 export const QuestionSchema = z.object({ dimension: DimensionSchema, eyebrow: z.string(), text: z.string().min(1), hint: z.string(), options: z.array(z.string()), type: z.enum(["discovery", "deepening", "choice", "confirmation", "conflict_resolution"]) });
 export type Question = z.infer<typeof QuestionSchema>;
 export const EngineAnalysisSchema = z.object({
-  engineVersion: z.literal(ENGINE_VERSION), promptVersion: z.literal("orchestrator-0.2.1"),
+  engineVersion: z.literal(ENGINE_VERSION), promptVersion: z.literal("orchestrator-0.2.2"),
   artifact: z.enum(["workshop", "apresentacao", "aula", "campanha", "analise", "plano", "texto", "codigo", "generic"]),
   dimensions: z.record(DimensionSchema, DimensionStatusSchema),
   sufficiency: z.enum(["NOT_READY", "ASK_IF_HIGH_VALUE", "READY", "READY_WITH_ASSUMPTION"]),
@@ -43,8 +43,11 @@ function detectArtifact(text: string): EngineAnalysis["artifact"] {
   return "generic";
 }
 
-function hasTopic(text: string) {
-  return /\b(?:workshop|oficina|treinamento)\s+(?:sobre|de)\s+[^.\n]{2,}/i.test(text) || /\b(?:tema|assunto)\s*(?:é|:|sobre)\s*[^.\n]{2,}/i.test(text) || /\bsobre\s+(?!isso|esse|o assunto)[^.\n]{2,}/i.test(text);
+function hasTopic(session: CofreSession) {
+  const text = allText(session);
+  const explicit = /\b(?:workshop|oficina|treinamento)\s+(?:sobre|de)\s+[^.\n]{2,}/i.test(text) || /\b(?:tema|assunto)\s*(?:é|:|sobre)\s*[^.\n]{2,}/i.test(text) || /\bsobre\s+(?!isso|esse|o assunto)[^.\n]{2,}/i.test(text);
+  if (explicit) return true;
+  return dimensionTexts(session, "contexto").some((value) => value.split(/\s+/).length >= 3 && !genericAudience.test(value));
 }
 
 function objectiveDepth(values: string[], text: string): DimensionStatus {
@@ -58,7 +61,7 @@ function objectiveDepth(values: string[], text: string): DimensionStatus {
 function contextDepth(values: string[], text: string, artifact: EngineAnalysis["artifact"]): DimensionStatus {
   const candidates = [...values, ...text.split("\n")].map((value) => value.trim());
   if (candidates.some((value) => genericAudience.test(value))) return "partial";
-  const specific = candidates.some((value) => /\b(?:equipe|time|clientes?|alunos?|professores?|diretoria|designers?|gestores?|desenvolvedores?|marketing|vendas|produto)\b(?:\s+(?:de|da|do|com)\s+[^.\n]+)?/i.test(value) && !genericAudience.test(value));
+  const specific = candidates.some((value) => /\b(?:equipe|time|participantes?|clientes?|alunos?|professores?|diretoria|designers?|gerentes?|gestores?|desenvolvedores?|marketing|vendas|produto)\b(?:\s+(?:de|da|do|com)\s+[^.\n]+)?/i.test(value) && !genericAudience.test(value));
   if (!specific) return "missing";
   if (artifact === "workshop" && !candidates.some((value) => /\b(?:b[aá]sico|iniciante|intermedi[aá]rio|avan[cç]ado|experi[eê]ncia|conhece|contato|familiaridade|usam?|come[cç]ando|m[eé]todo)\b/i.test(value))) return "partial";
   return "sufficient";
@@ -91,14 +94,15 @@ function topicLabel(text: string) {
 function workshopQuestion(session: CofreSession, states: Record<Dimension, DimensionStatus>): Question | null {
   const text = allText(session);
   const last = latest(session);
-  if (vagueObjective.test(last) || /\btomar\s+uma\s+decis[aã]o\b/i.test(last)) return makeQuestion("objetivo", "deepening", "Vamos tornar o resultado concreto", `Que decisão você quer que ${/equipe/i.test(text) ? "sua equipe" : "as pessoas"} consiga tomar ao final do workshop?`, "Diga qual escolha, prioridade ou caminho precisa ficar claro.");
-  if (!hasTopic(text)) return makeQuestion("contexto", "discovery", "Quero entender melhor", "Legal. Sobre o que será esse workshop e quem vai participar?", "Pode responder do seu jeito; tema e participantes já ajudam bastante.");
-  if (states.objetivo !== "sufficient") return makeQuestion("objetivo", "deepening", "E depois do workshop?", `O que você gostaria que ${/equipe/i.test(text) ? "essa equipe" : "as pessoas"} conseguisse fazer ou decidir depois do workshop sobre ${topicLabel(text)}?`, "Busque uma mudança ou decisão que seja possível reconhecer.");
-  if (states.contexto === "missing") return makeQuestion("contexto", "discovery", "Quero calibrar a conversa", `Quem vai participar e quanto essas pessoas já conhecem sobre ${topicLabel(text)}?`, "Isso muda a profundidade e o tipo de atividade.");
-  if (states.contexto === "partial") return makeQuestion("contexto", "deepening", "Entendi. E hoje?", `${/equipe/i.test(text) ? "Essa equipe" : "Essas pessoas"} já usa ${topicLabel(text)} no trabalho ou ainda está começando?`, "Quero entender o ponto de partida, sem transformar isso em formulário.");
+  const canAsk = (dimension: Dimension) => !session.skipped.includes(dimension);
+  if (canAsk("objetivo") && (vagueObjective.test(last) || /\btomar\s+uma\s+decis[aã]o\b/i.test(last))) return makeQuestion("objetivo", "deepening", "Vamos tornar o resultado concreto", `Que decisão você quer que ${/equipe/i.test(text) ? "sua equipe" : "as pessoas"} consiga tomar ao final do workshop?`, "Diga qual escolha, prioridade ou caminho precisa ficar claro.");
+  if (canAsk("contexto") && !hasTopic(session)) return makeQuestion("contexto", "discovery", "Quero entender melhor", "Legal. Sobre o que será esse workshop e quem vai participar?", "Pode responder do seu jeito; tema e participantes já ajudam bastante.");
+  if (canAsk("objetivo") && states.objetivo !== "sufficient") return makeQuestion("objetivo", "deepening", "E depois do workshop?", `O que você gostaria que ${/equipe/i.test(text) ? "essa equipe" : "as pessoas"} conseguisse fazer ou decidir depois do workshop sobre ${topicLabel(text)}?`, "Busque uma mudança ou decisão que seja possível reconhecer.");
+  if (canAsk("contexto") && states.contexto === "missing") return makeQuestion("contexto", "discovery", "Quero calibrar a conversa", `Quem vai participar e quanto essas pessoas já conhecem sobre ${topicLabel(text)}?`, "Isso muda a profundidade e o tipo de atividade.");
+  if (canAsk("contexto") && states.contexto === "partial") return makeQuestion("contexto", "deepening", "Entendi. E hoje?", `${/equipe/i.test(text) ? "Essa equipe" : "Essas pessoas"} já usa ${topicLabel(text)} no trabalho ou ainda está começando?`, "Quero entender o ponto de partida, sem transformar isso em formulário.");
   if (/\b(?:profissional|tom profissional)\b/i.test(last)) return makeQuestion("restricoes", "deepening", "Quando você diz profissional", "Você está pensando em algo mais executivo e direto ou mais técnico e detalhado?", "Escolha o que melhor representa o uso real.", ["Executivo e direto", "Técnico e detalhado"]);
   if (/\bdin[aâ]mico\b/i.test(last)) return makeQuestion("formato", "deepening", "Quando você diz dinâmico", "Você imagina mais atividades práticas, mais participação das pessoas ou menos exposição?", "Isso ajuda a traduzir o adjetivo em uma dinâmica concreta.", ["Mais prática", "Mais participação", "Menos exposição"]);
-  if (states.restricoes === "missing") return makeQuestion("restricoes", "discovery", "Só mais uma coisa que muda o desenho", "Quanto tempo vocês terão? Quero entender se faz sentido algo mais introdutório ou mais mão na massa.", "A duração determina a profundidade possível.", ["1 hora", "2 horas", "Meio período"]);
+  if (canAsk("restricoes") && states.restricoes === "missing") return makeQuestion("restricoes", "discovery", "Só mais uma coisa que muda o desenho", "Quanto tempo vocês terão? Quero entender se faz sentido algo mais introdutório ou mais mão na massa.", "A duração determina a profundidade possível.", ["1 hora", "2 horas", "Meio período"]);
   return null;
 }
 
@@ -134,7 +138,7 @@ export function analyzeSession(rawSession: CofreSession): EngineAnalysis {
     .filter(([, status]) => ["missing", "partial", "contradictory"].includes(status))
     .map(([target, status]) => ({ target, severity: target === "objetivo" || (artifact === "workshop" && ["contexto", "restricoes"].includes(target)) ? "critical" as const : "relevant" as const, description: `${target} permanece ${status}; ainda há ambiguidade com impacto na execução.` }));
   return EngineAnalysisSchema.parse({
-    engineVersion: ENGINE_VERSION, promptVersion: "orchestrator-0.2.1", artifact, dimensions,
+    engineVersion: ENGINE_VERSION, promptVersion: "orchestrator-0.2.2", artifact, dimensions,
     sufficiency: next ? (gaps.some((gap) => gap.severity === "critical") ? "NOT_READY" : "ASK_IF_HIGH_VALUE") : "READY",
     nextAction: next ? "ASK" : "COMPOSE", nextQuestion: next, gaps,
   });
