@@ -152,12 +152,21 @@ export async function POST(request: NextRequest) {
       await recordEvent(auth.supabase, auth.user.id, body.consultationId, "safety_block", safety.category);
       return NextResponse.json(
         {
-          error: "SAFETY_BLOCKED",
-          message: safety.message,
-          category: safety.category,
+          source: "fallback",
+          question: {
+            dimension: "restricoes",
+            eyebrow: "Uso responsável",
+            text: "Esse pedido precisa ser reformulado para uma finalidade segura.",
+            hint: safety.message,
+            options: ["Quero abordar prevenção", "Quero uma análise educacional", "Vou reformular o pedido"],
+            type: "conflict_resolution",
+          },
+          prompt: null,
+          assumptions: [],
+          safetyBlocked: true,
           usage: { used: usedBefore, limit: FREE_LIMIT, limitReached: usedBefore >= FREE_LIMIT },
         },
-        { status: 422 },
+        { status: 200 },
       );
     }
 
