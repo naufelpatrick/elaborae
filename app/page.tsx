@@ -1,27 +1,29 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import {
   CofreSession,
   ENGINE_VERSION,
   Question,
   applyAnswer,
-  composePrompt,
-  nextQuestion as fallbackNextQuestion,
   summary,
 } from "@/lib/cofre";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
 type View = "intent" | "interview" | "result" | "review";
 type LoadingMode = "intent" | "answer" | "compose" | "adjust" | "review" | null;
+type Usage = { used: number; limit: number; limitReached: boolean };
 type EngineReply = {
   source: "llm" | "fallback";
   question: Question | null;
   prompt: string | null;
   assumptions: string[];
-  usage?: { freeLimitReached: boolean };
+  usage?: Usage;
 };
 
 const initialSession: CofreSession = { originalRequest: "", answers: [], skipped: [] };
+const initialUsage: Usage = { used: 0, limit: 1, limitReached: false };
 
 const loadingCopy: Record<Exclude<LoadingMode, null>, { title: string; detail: string }> = {
   intent: {
@@ -76,9 +78,20 @@ export default function Home() {
   const [reviewSession, setReviewSession] = useState<CofreSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
-  const [limitReached, setLimitReached] = useState(false);
+  const [engineError, setEngineError] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [usage, setUsage] = useState<Usage>(initialUsage);
   const consultationIdRef = useRef<string | null>(null);
   const currentStep = question ? ["contexto", "objetivo", "formato", "restricoes", "exemplo"].indexOf(question.dimension) + 1 : 5;
+  const authenticated = Boolean(accessToken && userEmail);
+  const limitReached = usage.limitReached || usage.used >= usage.limit;
 
   function getConsultationId() {
     if (!consultationIdRef.current) {
@@ -87,37 +100,162 @@ export default function Home() {
     return consultationIdRef.current;
   }
 
+  async function refreshUsage(token: string) {
+    const response = await fetch("/api/elabora", {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return;
+    const data = await response.json() as { usage?: Usage };
+    if (data.usage) setUsage(data.usage);
+  }
+
+  function applyAuthSession(authSession: Session | null) {
+    const token = authSession?.access_token || null;
+    const email = authSession?.user?.email || null;
+    setAccessToken(token);
+    setUserEmail(email);
+    if (token) void refreshUsage(token);
+    else setUsage(initialUsage);
+  }
+
   useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setAuthError("A autenticação ainda não está configurada neste ambiente.");
+      setAuthLoading(false);
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
     let mounted = true;
-    fetch("/api/elabora", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data: { usage?: { freeUsed?: boolean } }) => {
-        if (mounted) setLimitReached(Boolean(data.usage?.freeUsed));
-      })
-      .catch(() => undefined);
-    return () => { mounted = false; };
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      applyAuthSession(data.session);
+      setAuthLoading(false);
+    }).catch(() => {
+      if (mounted) setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      applyAuthSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
+  async function sendOtp(event: FormEvent) {
+    event.preventDefault();
+    const email = authEmail.trim().toLowerCase();
+    if (!email || authBusy) return;
+
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
+      if (error) throw error;
+      setAuthEmail(email);
+      setOtpSent(true);
+      setOtp("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Não foi possível enviar o código. Tente novamente.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function verifyOtp(event: FormEvent) {
+    event.preventDefault();
+    const token = otp.replace(/\s/g, "");
+    if (!authEmail || !token || authBusy) return;
+
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: authEmail,
+        token,
+        type: "email",
+      });
+      if (error) throw error;
+      applyAuthSession(data.session);
+      setOtpSent(false);
+      setOtp("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Código inválido ou expirado. Solicite um novo código.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function signOut() {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.auth.signOut();
+    } finally {
+      setAccessToken(null);
+      setUserEmail(null);
+      setUsage(initialUsage);
+      setSession(initialSession);
+      setQuestion(null);
+      setPrompt("");
+      setDraft("");
+      setView("intent");
+      consultationIdRef.current = null;
+      setAuthBusy(false);
+    }
+  }
+
   async function requestEngine(nextSession: CofreSession, forceCompose = false, mode: Exclude<LoadingMode, null> = forceCompose ? "compose" : "answer") {
+    if (!accessToken) {
+      setAuthError("Entre com seu e-mail para continuar.");
+      setView("intent");
+      return false;
+    }
+
+    setEngineError("");
     setLoadingMode(mode);
     setBusy(true);
     try {
       const response = await fetch("/api/elabora", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ session: nextSession, forceCompose, consultationId: getConsultationId() }),
       });
 
+      if (response.status === 401) {
+        setAuthError("Sua sessão expirou. Entre novamente para continuar.");
+        await signOut();
+        return false;
+      }
+
       if (response.status === 429) {
-        setLimitReached(true);
+        const data = await response.json() as { usage?: Usage };
+        if (data.usage) setUsage(data.usage);
         setView("intent");
         return false;
       }
+
       if (!response.ok) throw new Error("ENGINE_REQUEST_FAILED");
 
       const result = await response.json() as EngineReply;
       setQuestion(result.question);
-      if (result.usage?.freeLimitReached) setLimitReached(true);
+      if (result.usage) setUsage(result.usage);
 
       if (result.prompt) {
         setPrompt(result.prompt);
@@ -125,20 +263,12 @@ export default function Home() {
       } else if (result.question) {
         setView("interview");
       } else {
-        setPrompt(composePrompt(nextSession));
-        setView("result");
+        throw new Error("ENGINE_EMPTY_RESPONSE");
       }
       return true;
     } catch {
-      const fallbackQuestion = forceCompose ? null : fallbackNextQuestion(nextSession);
-      setQuestion(fallbackQuestion);
-      if (fallbackQuestion) {
-        setView("interview");
-      } else {
-        setPrompt(composePrompt(nextSession));
-        setView("result");
-      }
-      return true;
+      setEngineError("Não foi possível processar esta etapa agora. Tente novamente em alguns instantes.");
+      return false;
     } finally {
       setBusy(false);
       setLoadingMode(null);
@@ -147,7 +277,7 @@ export default function Home() {
 
   async function start(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim() || busy || limitReached) return;
+    if (!draft.trim() || busy || limitReached || !authenticated) return;
     const next = { ...initialSession, originalRequest: draft.trim() };
     setSession(next);
     const completed = await requestEngine(next, false, "intent");
@@ -177,6 +307,7 @@ export default function Home() {
     setDraft("");
     setAdjusting(false);
     setLoadingMode(null);
+    setEngineError("");
     consultationIdRef.current = null;
     setView("intent");
   }
@@ -231,7 +362,13 @@ export default function Home() {
 
   return (
     <main>
-      <header><Logo /><div className="enginePill"><span /> COFRE Engine <b>{ENGINE_VERSION}</b></div></header>
+      <header>
+        <Logo />
+        <div className="headerActions">
+          {authenticated && <div className="accountPill"><span>{userEmail}</span><button disabled={authBusy} onClick={signOut}>Sair</button></div>}
+          <div className="enginePill"><span /> COFRE Engine <b>{ENGINE_VERSION}</b></div>
+        </div>
+      </header>
       {busy && loadingMode && <Thinking mode={loadingMode} />}
 
       {view === "intent" && (
@@ -239,17 +376,51 @@ export default function Home() {
           <div className="kicker">Clareza antes do comando</div>
           <h1>O que você quer<br />fazer com <em>IA?</em></h1>
           <p className="lead">Explique do seu jeito. Algumas perguntas inteligentes transformam sua ideia em um prompt pronto para qualquer IA.</p>
-          {limitReached && (
-            <div className="limitNotice" role="status" aria-live="polite">
-              <span aria-hidden="true">✓</span>
-              <div><b>Limite gratuito utilizado</b><p>Você já usou sua consulta gratuita nesta sessão do navegador. Em breve teremos novos planos de acesso.</p></div>
+
+          {authLoading ? (
+            <div className="authCard"><div className="authLoading">Verificando sua sessão…</div></div>
+          ) : !authenticated ? (
+            <div className="authCard">
+              <div className="authIntro">
+                <div className="kicker">Acesso gratuito</div>
+                <h2>Entre sem senha.</h2>
+                <p>Informe seu e-mail e enviaremos um código temporário para acessar o Elaborae.</p>
+              </div>
+              {!otpSent ? (
+                <form onSubmit={sendOtp}>
+                  <label htmlFor="auth-email">Seu e-mail</label>
+                  <input id="auth-email" type="email" autoComplete="email" autoFocus value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="voce@exemplo.com" disabled={authBusy} />
+                  <button className="primary authPrimary" disabled={!authEmail.trim() || authBusy}>{authBusy ? "Enviando…" : "Receber código de acesso"}</button>
+                </form>
+              ) : (
+                <form onSubmit={verifyOtp}>
+                  <label htmlFor="auth-code">Código enviado para {authEmail}</label>
+                  <input id="auth-code" className="otpInput" inputMode="numeric" autoComplete="one-time-code" autoFocus value={otp} maxLength={8} onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))} placeholder="000000" disabled={authBusy} />
+                  <button className="primary authPrimary" disabled={!otp.trim() || authBusy}>{authBusy ? "Verificando…" : "Entrar no Elaborae"}</button>
+                  <div className="authLinks"><button type="button" disabled={authBusy} onClick={() => { setOtpSent(false); setOtp(""); setAuthError(""); }}>Trocar e-mail</button><button type="button" disabled={authBusy} onClick={() => void sendOtp({ preventDefault() {} } as FormEvent)}>Reenviar código</button></div>
+                </form>
+              )}
+              {authError && <p className="authError" role="alert">{authError}</p>}
+              <div className="authTrust">Sem senha. Seu e-mail é usado apenas para identificar sua conta e controlar o limite de uso.</div>
             </div>
+          ) : (
+            <>
+              <div className="usageBar"><span>Plano gratuito</span><b>{usage.used} de {usage.limit} consulta{usage.limit === 1 ? "" : "s"} utilizada{usage.limit === 1 ? "" : "s"}</b></div>
+              {limitReached && (
+                <div className="limitNotice" role="status" aria-live="polite">
+                  <span aria-hidden="true">✓</span>
+                  <div><b>Limite gratuito utilizado</b><p>Você já utilizou o limite gratuito da sua conta. Em breve teremos novos planos de acesso.</p></div>
+                </div>
+              )}
+              {engineError && <div className="engineError" role="alert">{engineError}</div>}
+              <form className={`intentCard${limitReached ? " locked" : ""}`} onSubmit={start}>
+                <label htmlFor="intent">Sua ideia</label>
+                <textarea id="intent" autoFocus={!limitReached} disabled={limitReached || busy} value={draft} maxLength={12000} onChange={(e) => setDraft(e.target.value)} placeholder={limitReached ? "O limite gratuito desta conta já foi utilizado." : "Ex.: Quero preparar uma apresentação para convencer a diretoria a investir mais em pesquisa com usuários…"} />
+                <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim() || busy || limitReached}>{limitReached ? "Limite gratuito utilizado" : <>Continuar <span>→</span></>}</button></div>
+              </form>
+            </>
           )}
-          <form className={`intentCard${limitReached ? " locked" : ""}`} onSubmit={start}>
-            <label htmlFor="intent">Sua ideia</label>
-            <textarea id="intent" autoFocus={!limitReached} disabled={limitReached || busy} value={draft} maxLength={12000} onChange={(e) => setDraft(e.target.value)} placeholder={limitReached ? "Sua consulta gratuita nesta sessão já foi utilizada." : "Ex.: Quero preparar uma apresentação para convencer a diretoria a investir mais em pesquisa com usuários…"} />
-            <div className="cardFooter"><span>{draft.length.toLocaleString("pt-BR")} / 12.000</span><button className="primary" disabled={!draft.trim() || busy || limitReached}>{limitReached ? "Limite gratuito utilizado" : <>Continuar <span>→</span></>}</button></div>
-          </form>
+
           <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O COFRE identifica apenas o que realmente faz diferença.</p></div>
           <section className="cofreIntro" aria-labelledby="cofre-title">
             <div className="cofreIntroCopy">
@@ -284,6 +455,7 @@ export default function Home() {
           <h2>{question.text}</h2>
           <p className="lead">{question.hint}</p>
           {!!question.options.length && <div className="chips">{question.options.map((option) => <button key={option} disabled={busy} onClick={() => answer(option)}>{option}</button>)}</div>}
+          {engineError && <div className="engineError" role="alert">{engineError}</div>}
           <div className="answerBox">
             <textarea autoFocus disabled={busy} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escreva do seu jeito…" />
             <button className="primary round" onClick={() => answer()} disabled={!draft.trim() || busy} aria-label="Enviar resposta">→</button>
@@ -294,7 +466,7 @@ export default function Home() {
 
       {view === "result" && (
         <section className="result shell">
-          <div className="resultTop"><div><div className="kicker success">✓ Prompt validado</div><h2>Seu Prompt COFRE<br />está pronto.</h2></div><button className="secondary" disabled={busy || limitReached} onClick={reset}>{limitReached ? "✓ Consulta gratuita utilizada" : "＋ Criar outro"}</button></div>
+          <div className="resultTop"><div><div className="kicker success">✓ Prompt validado</div><h2>Seu Prompt COFRE<br />está pronto.</h2></div><button className="secondary" disabled={busy || limitReached} onClick={reset}>{limitReached ? "✓ Limite gratuito utilizado" : "＋ Criar outro"}</button></div>
           <div className="resultGrid">
             <article className="promptCard">
               <div className="promptHead"><span className="universal">◎ Universal</span><span>Pronto para usar em qualquer IA</span></div>
@@ -307,7 +479,8 @@ export default function Home() {
               <div className="summary">{summary(session).map(([label, value], index) => <div key={label}><i>{index + 1}</i><span><b>{label}</b><small>{value}</small></span></div>)}</div>
             </aside>
           </div>
-          {limitReached && <div className="usageNote"><b>Consulta gratuita utilizada.</b> Você ainda pode ajustar ou revisar este prompt, mas não iniciar uma nova consulta nesta sessão do navegador.</div>}
+          {limitReached && <div className="usageNote"><b>Limite gratuito utilizado.</b> Você ainda pode ajustar ou revisar este prompt, mas uma nova consulta exige um novo limite disponível na sua conta.</div>}
+          {engineError && <div className="engineError" role="alert">{engineError}</div>}
           {adjusting ? <form className="adjustBox" onSubmit={adjust}><input autoFocus disabled={busy} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ex.: deixe mais executivo e limite a 10 tópicos" /><button className="primary" disabled={busy}>Aplicar ajuste</button></form> : <div className="resultActions"><button disabled={busy} onClick={() => setAdjusting(true)}>✎ Ajustar prompt</button><button disabled={busy} onClick={openReview}>↶ Revisar respostas</button></div>}
         </section>
       )}
