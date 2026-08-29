@@ -59,4 +59,5 @@ aside{padding:24px}aside h3{font:600 19px Manrope;margin:0 0 8px}aside>p{font-si
 @media(prefers-reduced-motion:reduce){.thinkingMark span{animation:none;opacity:1}}
 
 footer{margin-top:auto;padding:22px 5vw;border-top:1px solid rgba(23,35,29,.1);display:flex;justify-content:space-between;color:var(--muted);font-size:11px;letter-spacing:.04em}
+footer span:first-child::after{content:" | info@elaborae.com.br"}
 @media(max-width:760px){header{height:68px}.enginePill b{display:none}.hero{padding-top:48px}.cofreIntro{margin-top:64px;padding:32px 24px;grid-template-columns:1fr;gap:34px}.cofreIntro:after{font-size:80px}.resultTop{align-items:start;gap:20px}.resultGrid{grid-template-columns:1fr}.resultTop .secondary{white-space:nowrap}.promptHead>span:last-child{display:none}.adjustBox{flex-direction:column}.thinkingCard{padding:22px;align-items:flex-start}.thinkingMark{width:48px;height:48px}footer span:nth-child(2){display:none}}
