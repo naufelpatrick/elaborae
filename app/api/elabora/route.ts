@@ -6,7 +6,7 @@ import { getSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
-const FREE_LIMIT = Math.max(1, Number(process.env.FREE_CONSULTATIONS_LIMIT || 1));
+const FREE_LIMIT = Math.max(1, Number(process.env.FREE_CONSULTATIONS_LIMIT || 3));
 
 const RequestSchema = z.object({
   session: CofreSessionSchema,
