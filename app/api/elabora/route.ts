@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { CofreSessionSchema } from "@/lib/cofre";
 import { runElaboraEngine } from "@/lib/elabora-ai";
+import { checkSafety } from "@/lib/safety";
 import { getSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -13,6 +14,9 @@ const RequestSchema = z.object({
   forceCompose: z.boolean().optional().default(false),
   consultationId: z.string().min(8).max(128),
 });
+
+type SupabaseServer = ReturnType<typeof getSupabaseServerClient>;
+type ProductEvent = "engine_request" | "consultation_completed" | "safety_block";
 
 function bearerToken(request: NextRequest) {
   const authorization = request.headers.get("authorization") || "";
@@ -30,7 +34,7 @@ async function authenticatedContext(request: NextRequest) {
   return { token, supabase, user: data.user };
 }
 
-async function usageForUser(supabase: ReturnType<typeof getSupabaseServerClient>, userId: string) {
+async function usageForUser(supabase: SupabaseServer, userId: string) {
   const { count, error } = await supabase
     .from("consultation_usage")
     .select("id", { count: "exact", head: true })
@@ -40,17 +44,51 @@ async function usageForUser(supabase: ReturnType<typeof getSupabaseServerClient>
   return count || 0;
 }
 
+async function requestCountForUser(supabase: SupabaseServer, userId: string) {
+  const { count, error } = await supabase
+    .from("product_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("event_type", "engine_request");
+
+  if (error) throw error;
+  return count || 0;
+}
+
+async function recordEvent(
+  supabase: SupabaseServer,
+  userId: string,
+  consultationId: string,
+  eventType: ProductEvent,
+  source?: string | null,
+) {
+  const { error } = await supabase.from("product_events").insert({
+    user_id: userId,
+    consultation_id: consultationId,
+    event_type: eventType,
+    source: source || null,
+  });
+
+  if (error) console.warn("[Elabora Telemetry]", eventType, error.message);
+}
+
 export async function GET(request: NextRequest) {
   const hasApiKey = Boolean(process.env.OPENROUTER_API_KEY?.trim());
   const model = process.env.OPENROUTER_MODEL?.trim() || null;
   const auth = await authenticatedContext(request);
 
   let used = 0;
+  let requests = 0;
   if (auth) {
     try {
       used = await usageForUser(auth.supabase, auth.user.id);
     } catch (error) {
       console.error("[Elabora Usage]", error);
+    }
+    try {
+      requests = await requestCountForUser(auth.supabase, auth.user.id);
+    } catch (error) {
+      console.warn("[Elabora Telemetry] request count unavailable", error);
     }
   }
 
@@ -71,6 +109,7 @@ export async function GET(request: NextRequest) {
       used,
       limit: FREE_LIMIT,
       limitReached: used >= FREE_LIMIT,
+      requests,
     },
   });
 }
@@ -108,6 +147,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const safety = checkSafety(body.session);
+    if (safety.blocked) {
+      await recordEvent(auth.supabase, auth.user.id, body.consultationId, "safety_block", safety.category);
+      return NextResponse.json(
+        {
+          source: "fallback",
+          question: {
+            dimension: "restricoes",
+            eyebrow: "Uso responsável",
+            text: "Esse pedido precisa ser reformulado para uma finalidade segura.",
+            hint: safety.message,
+            options: ["Quero abordar prevenção", "Quero uma análise educacional", "Vou reformular o pedido"],
+            type: "conflict_resolution",
+          },
+          prompt: null,
+          assumptions: [],
+          safetyBlocked: true,
+          usage: { used: usedBefore, limit: FREE_LIMIT, limitReached: usedBefore >= FREE_LIMIT },
+        },
+        { status: 200 },
+      );
+    }
+
+    await recordEvent(auth.supabase, auth.user.id, body.consultationId, "engine_request");
+
     const result = await runElaboraEngine(body.session, body.forceCompose);
     const completed = Boolean(result.prompt);
     let usedAfter = usedBefore;
@@ -119,6 +183,7 @@ export async function POST(request: NextRequest) {
 
       if (insertError && insertError.code !== "23505") throw insertError;
       usedAfter = Math.min(FREE_LIMIT, usedBefore + 1);
+      await recordEvent(auth.supabase, auth.user.id, body.consultationId, "consultation_completed", result.source);
     }
 
     return NextResponse.json(

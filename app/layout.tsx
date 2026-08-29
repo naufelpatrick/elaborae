@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import ResponsibleUseGate from "./responsible-use-gate";
 import "./globals.css";
 import "./limit.css";
+import "./responsible-use.css";
 
 export const metadata: Metadata = {
   title: "Elaborae — transforme ideias em prompts",
@@ -10,7 +12,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        {children}
+        <ResponsibleUseGate />
+      </body>
     </html>
   );
 }
