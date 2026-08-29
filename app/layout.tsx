@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./limit.css";
 
 export const metadata: Metadata = {
   title: "Elaborae — transforme ideias em prompts",
