@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ResponsibleUseGate from "./responsible-use-gate";
+import CreatorPhotoRepair from "./creator-photo";
 import "./globals.css";
 import "./limit.css";
 import "./responsible-use.css";
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR">
       <body>
         {children}
+        <CreatorPhotoRepair />
         <ResponsibleUseGate />
       </body>
     </html>
