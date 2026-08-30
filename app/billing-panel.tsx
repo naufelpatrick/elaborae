@@ -62,20 +62,26 @@ export default function BillingPanel() {
   }
 
   useEffect(() => {
-    const footer = document.querySelector("main > footer");
-    if (!footer?.parentElement) return;
+    let host: HTMLElement | null = null;
+    let frame = 0;
 
-    let host = document.getElementById("billing-portal-host") as HTMLElement | null;
-    const createdHere = !host;
-    if (!host) {
+    const placeBeforeCofre = () => {
+      const cofre = document.querySelector(".cofreIntro");
+      if (!cofre?.parentElement) {
+        frame = window.requestAnimationFrame(placeBeforeCofre);
+        return;
+      }
+
       host = document.createElement("div");
       host.id = "billing-portal-host";
-      footer.parentElement.insertBefore(host, footer);
-    }
-    setPortalHost(host);
+      cofre.parentElement.insertBefore(host, cofre);
+      setPortalHost(host);
+    };
 
+    placeBeforeCofre();
     return () => {
-      if (createdHere && host?.parentElement) host.remove();
+      if (frame) window.cancelAnimationFrame(frame);
+      host?.remove();
     };
   }, []);
 
@@ -121,8 +127,10 @@ export default function BillingPanel() {
         },
         body: JSON.stringify({ credits }),
       });
-      const data = await response.json() as { url?: string; message?: string };
-      if (!response.ok || !data.url) throw new Error(data.message || "CHECKOUT_FAILED");
+      const data = await response.json() as { url?: string; message?: string; error?: string };
+      if (!response.ok || !data.url) {
+        throw new Error(data.message || data.error || "CHECKOUT_FAILED");
+      }
       window.location.assign(data.url);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível abrir o pagamento agora.");
