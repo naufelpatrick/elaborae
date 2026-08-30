@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-export default function CreatorPhoto() {
-  const [src, setSrc] = useState<string | null>(null);
-
+export default function CreatorPhotoRepair() {
   useEffect(() => {
     let mounted = true;
 
@@ -14,30 +12,19 @@ export default function CreatorPhoto() {
         return response.text();
       })
       .then((base64) => {
+        if (!mounted) return;
         const clean = base64.trim();
-        if (mounted && clean.startsWith("/9j/")) {
-          setSrc(`data:image/jpeg;base64,${clean}`);
-        }
+        if (!clean.startsWith("/9j/")) return;
+
+        const image = document.querySelector<HTMLImageElement>('.creatorPhotoWrap img[src="/patrick-naufel.jpg"]');
+        if (image) image.src = `data:image/jpeg;base64,${clean}`;
       })
-      .catch(() => {
-        if (mounted) setSrc(null);
-      });
+      .catch(() => undefined);
 
     return () => {
       mounted = false;
     };
   }, []);
 
-  if (!src) {
-    return (
-      <div
-        aria-hidden="true"
-        style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#71697c", font: "700 44px Manrope, sans-serif" }}
-      >
-        E
-      </div>
-    );
-  }
-
-  return <img src={src} alt="Patrick Naufel, criador do Elaborae" />;
+  return null;
 }
