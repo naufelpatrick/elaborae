@@ -31,6 +31,34 @@ export default function BillingPanel() {
     if (data.usage) setUsage(data.usage);
   }
 
+  async function confirmReturnedPayment(current: Session | null) {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    if (params.get("payment") !== "success" || !sessionId || !current?.access_token) return;
+
+    setMessage("Pagamento confirmado. Adicionando suas consultas…");
+    const response = await fetch("/api/stripe/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${current.access_token}`,
+      },
+      body: JSON.stringify({ sessionId }),
+    });
+
+    if (!response.ok) {
+      setMessage("O pagamento foi recebido, mas o saldo ainda está sendo confirmado.");
+      return;
+    }
+
+    await refresh(current);
+    setMessage("Consultas adicionadas ao seu saldo.");
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("payment");
+    cleanUrl.searchParams.delete("session_id");
+    window.history.replaceState({}, "", cleanUrl.toString());
+  }
+
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
     const supabase = getSupabaseBrowserClient();
@@ -40,6 +68,7 @@ export default function BillingPanel() {
       if (!mounted) return;
       setSession(data.session);
       void refresh(data.session);
+      void confirmReturnedPayment(data.session);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -49,15 +78,7 @@ export default function BillingPanel() {
     });
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get("payment") === "success") {
-      setMessage("Pagamento confirmado. Atualizando seu saldo…");
-      window.setTimeout(() => {
-        supabase.auth.getSession().then(({ data }) => {
-          void refresh(data.session);
-          setMessage("Consultas adicionadas ao seu saldo.");
-        });
-      }, 1800);
-    } else if (params.get("payment") === "cancelled") {
+    if (params.get("payment") === "cancelled") {
       setMessage("Pagamento cancelado. Nenhuma consulta foi cobrada.");
     }
 
