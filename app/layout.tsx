@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import ResponsibleUseGate from "./responsible-use-gate";
+import CreatorPhotoRepair from "./creator-photo";
 import "./globals.css";
 import "./limit.css";
 import "./responsible-use.css";
+import "./creator.css";
 
 export const metadata: Metadata = {
   title: "Elaborae — transforme ideias em prompts",
-  description: "Elabore ideias com clareza usando uma entrevista guiada pelo Framework COFRE.",
+  description: "Transforme uma ideia em um prompt mais claro por meio de uma conversa adaptativa que identifica o que realmente faz diferença.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -14,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR">
       <body>
         {children}
+        <CreatorPhotoRepair />
         <ResponsibleUseGate />
       </body>
     </html>
