@@ -1,9 +1,20 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
+const STRIPE_SANDBOX_PRICES = {
+  30: "price_1UACssGuXqFqFCLPHPex4xTe",
+  60: "price_1UACt4GuXqFqFCLPLM9oEBbc",
+} as const;
+
+const isVercelPreview = process.env.VERCEL_ENV === "preview";
+
 export const STRIPE_TEST_PRICES = {
-  30: process.env.STRIPE_PRICE_30 || "price_1UA9kVGkbNWE4GI8HC09iV6C",
-  60: process.env.STRIPE_PRICE_60 || "price_1UA9kfGkbNWE4GI8gT1Vc2hu",
+  30: isVercelPreview
+    ? STRIPE_SANDBOX_PRICES[30]
+    : process.env.STRIPE_PRICE_30 || STRIPE_SANDBOX_PRICES[30],
+  60: isVercelPreview
+    ? STRIPE_SANDBOX_PRICES[60]
+    : process.env.STRIPE_PRICE_60 || STRIPE_SANDBOX_PRICES[60],
 } as const;
 
 export type CreditPack = keyof typeof STRIPE_TEST_PRICES;
