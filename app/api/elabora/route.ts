@@ -8,6 +8,7 @@ import { getSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase";
 export const runtime = "nodejs";
 
 const FREE_LIMIT = Math.max(1, Number(process.env.FREE_CONSULTATIONS_LIMIT || 3));
+const DAILY_FREE_LIMIT = Math.max(1, Number(process.env.DAILY_FREE_CONSULTATIONS_LIMIT || 100));
 
 const RequestSchema = z.object({
   session: CofreSessionSchema,
@@ -17,6 +18,12 @@ const RequestSchema = z.object({
 
 type SupabaseServer = ReturnType<typeof getSupabaseServerClient>;
 type ProductEvent = "engine_request" | "consultation_completed" | "safety_block";
+type DailyCapacity = {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  usageDay: string | null;
+};
 
 function bearerToken(request: NextRequest) {
   const authorization = request.headers.get("authorization") || "";
@@ -53,6 +60,34 @@ async function requestCountForUser(supabase: SupabaseServer, userId: string) {
 
   if (error) throw error;
   return count || 0;
+}
+
+async function reserveDailyFreeSlot(
+  supabase: SupabaseServer,
+  consultationId: string,
+): Promise<DailyCapacity> {
+  const { data, error } = await supabase
+    .rpc("reserve_daily_free_consultation_slot", {
+      p_consultation_id: consultationId,
+      p_daily_limit: DAILY_FREE_LIMIT,
+    })
+    .single();
+
+  if (error) throw error;
+
+  const row = data as {
+    allowed?: boolean;
+    used?: number;
+    daily_limit?: number;
+    usage_day?: string;
+  } | null;
+
+  return {
+    allowed: Boolean(row?.allowed),
+    used: Number(row?.used || 0),
+    limit: Number(row?.daily_limit || DAILY_FREE_LIMIT),
+    usageDay: row?.usage_day || null,
+  };
 }
 
 async function recordEvent(
@@ -111,6 +146,10 @@ export async function GET(request: NextRequest) {
       limitReached: used >= FREE_LIMIT,
       requests,
     },
+    dailyFree: {
+      limit: DAILY_FREE_LIMIT,
+      timezone: "America/Sao_Paulo",
+    },
   });
 }
 
@@ -168,6 +207,27 @@ export async function POST(request: NextRequest) {
         },
         { status: 200 },
       );
+    }
+
+    if (!existing) {
+      const dailyCapacity = await reserveDailyFreeSlot(auth.supabase, body.consultationId);
+      if (!dailyCapacity.allowed) {
+        return NextResponse.json(
+          {
+            error: "DAILY_FREE_LIMIT_REACHED",
+            message: "A capacidade gratuita de hoje foi atingida. Novas consultas serão liberadas amanhã.",
+            usage: { used: usedBefore, limit: FREE_LIMIT, limitReached: usedBefore >= FREE_LIMIT },
+            daily: {
+              used: dailyCapacity.used,
+              limit: dailyCapacity.limit,
+              limitReached: true,
+              usageDay: dailyCapacity.usageDay,
+              timezone: "America/Sao_Paulo",
+            },
+          },
+          { status: 429 },
+        );
+      }
     }
 
     await recordEvent(auth.supabase, auth.user.id, body.consultationId, "engine_request");
