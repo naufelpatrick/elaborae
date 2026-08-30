@@ -23,7 +23,7 @@ type EngineReply = {
 };
 
 const initialSession: CofreSession = { originalRequest: "", answers: [], skipped: [] };
-const initialUsage: Usage = { used: 0, limit: 1, limitReached: false };
+const initialUsage: Usage = { used: 0, limit: 3, limitReached: false };
 
 const loadingCopy: Record<Exclude<LoadingMode, null>, { title: string; detail: string }> = {
   intent: {
@@ -366,7 +366,7 @@ export default function Home() {
         <Logo />
         <div className="headerActions">
           {authenticated && <div className="accountPill"><span>{userEmail}</span><button disabled={authBusy} onClick={signOut}>Sair</button></div>}
-          <div className="enginePill"><span /> COFRE Engine <b>{ENGINE_VERSION}</b></div>
+          <div className="enginePill"><span /> Elaborae Engine <b>{ENGINE_VERSION}</b></div>
         </div>
       </header>
       {busy && loadingMode && <Thinking mode={loadingMode} />}
@@ -421,13 +421,13 @@ export default function Home() {
             </>
           )}
 
-          <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O COFRE identifica apenas o que realmente faz diferença.</p></div>
+          <div className="trust"><span>✦</span><p><b>Sem formulários complicados.</b><br />O Elaborae identifica apenas o que realmente faz diferença.</p></div>
           <section className="cofreIntro" aria-labelledby="cofre-title">
             <div className="cofreIntroCopy">
-              <div className="kicker">Por trás do Elaborae</div>
-              <h2 id="cofre-title">O que é o Framework <em>C.O.F.R.E.?</em></h2>
-              <p>É uma metodologia para transformar uma ideia ainda incompleta em uma instrução clara e útil para sistemas de IA. Você conversa naturalmente; o Engine identifica, nos bastidores, apenas as informações que podem melhorar o resultado.</p>
-              <div className="notForm"><span>✦</span><b>COFRE é um modelo de diagnóstico, não um formulário.</b></div>
+              <div className="kicker">Uma referência de estruturação</div>
+              <h2 id="cofre-title">Como o Elaborae usa o <em>C.O.F.R.E.?</em></h2>
+              <p>O C.O.F.R.E. é uma estrutura de prompting que organiza um pedido em Contexto, Objetivo, Formato, Restrições e Exemplo. O Elaborae usa esses elementos como referência e transforma o processo em uma conversa adaptativa: você não precisa conhecer a fórmula nem preencher cinco campos.</p>
+              <div className="notForm"><span>✦</span><b>No Elaborae, o C.O.F.R.E. é referência — não formulário.</b></div>
             </div>
             <div className="cofreDimensions">
               {[
@@ -442,6 +442,19 @@ export default function Home() {
                   <div><h3>{title}</h3><p>{description}</p></div>
                 </article>
               ))}
+            </div>
+          </section>
+
+          <section className="creatorSection" aria-labelledby="creator-title">
+            <div className="creatorPhotoWrap">
+              <img src="/patrick-naufel.jpg" alt="Patrick Naufel, criador do Elaborae" />
+            </div>
+            <div className="creatorCopy">
+              <div className="kicker">Quem criou o Elaborae?</div>
+              <h2 id="creator-title">Uma ferramenta criada para ajudar pessoas a pedir melhor à IA.</h2>
+              <p><strong>Patrick Naufel</strong> é designer, professor universitário e atua com UX, estratégia de produto e inteligência artificial aplicada. Sua trajetória combina design, tecnologia e educação — três áreas que se encontram diretamente na proposta do Elaborae.</p>
+              <p>Ao trabalhar com profissionais, estudantes e equipes, percebeu um padrão recorrente: muitas vezes, o problema não está na capacidade da IA, mas na dificuldade de transformar uma intenção em uma instrução realmente clara. O Elaborae nasceu para reduzir essa distância, conduzindo uma conversa que ajuda a desenvolver o pedido antes de gerar o prompt.</p>
+              <blockquote className="creatorQuote">“A proposta do Elaborae não é ensinar pessoas a decorar fórmulas de prompt. É ajudá-las a pensar melhor sobre o que realmente querem pedir.”<span className="creatorSignature">Patrick Naufel — criador do Elaborae</span></blockquote>
             </div>
           </section>
         </section>
@@ -466,7 +479,7 @@ export default function Home() {
 
       {view === "result" && (
         <section className="result shell">
-          <div className="resultTop"><div><div className="kicker success">✓ Prompt validado</div><h2>Seu Prompt COFRE<br />está pronto.</h2></div><button className="secondary" disabled={busy || limitReached} onClick={reset}>{limitReached ? "✓ Limite gratuito utilizado" : "＋ Criar outro"}</button></div>
+          <div className="resultTop"><div><div className="kicker success">✓ Prompt validado</div><h2>Seu prompt<br />está pronto.</h2></div><button className="secondary" disabled={busy || limitReached} onClick={reset}>{limitReached ? "✓ Limite gratuito utilizado" : "＋ Criar outro"}</button></div>
           <div className="resultGrid">
             <article className="promptCard">
               <div className="promptHead"><span className="universal">◎ Universal</span><span>Pronto para usar em qualquer IA</span></div>
@@ -475,7 +488,7 @@ export default function Home() {
             </article>
             <aside>
               <h3>Como ele foi construído</h3>
-              <p>O COFRE organizou sua intenção em cinco dimensões — sem inventar detalhes.</p>
+              <p>O Elaborae organizou sua intenção considerando as cinco dimensões do C.O.F.R.E. — sem inventar detalhes.</p>
               <div className="summary">{summary(session).map(([label, value], index) => <div key={label}><i>{index + 1}</i><span><b>{label}</b><small>{value}</small></span></div>)}</div>
             </aside>
           </div>
