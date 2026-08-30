@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
@@ -16,6 +17,7 @@ export default function BillingPanel() {
   const [usage, setUsage] = useState<BillingUsage | null>(null);
   const [busyPack, setBusyPack] = useState<30 | 60 | null>(null);
   const [message, setMessage] = useState("");
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
 
   async function refresh(current: Session | null) {
     if (!current?.access_token) {
@@ -58,6 +60,24 @@ export default function BillingPanel() {
     cleanUrl.searchParams.delete("session_id");
     window.history.replaceState({}, "", cleanUrl.toString());
   }
+
+  useEffect(() => {
+    const footer = document.querySelector("main > footer");
+    if (!footer?.parentElement) return;
+
+    let host = document.getElementById("billing-portal-host") as HTMLElement | null;
+    const createdHere = !host;
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "billing-portal-host";
+      footer.parentElement.insertBefore(host, footer);
+    }
+    setPortalHost(host);
+
+    return () => {
+      if (createdHere && host?.parentElement) host.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -110,9 +130,9 @@ export default function BillingPanel() {
     }
   }
 
-  if (!session) return null;
+  if (!session || !portalHost) return null;
 
-  return (
+  return createPortal(
     <section className="billingSection" aria-labelledby="billing-title">
       <div className="billingHead">
         <div>
@@ -151,6 +171,7 @@ export default function BillingPanel() {
         </article>
       </div>
       <p className="billingFootnote">Ajustes e revisões do mesmo prompt continuam sem consumir uma nova consulta.</p>
-    </section>
+    </section>,
+    portalHost,
   );
 }
