@@ -6,7 +6,7 @@ export default function CreatorPhotoRepair() {
   useEffect(() => {
     let mounted = true;
 
-    fetch("/patrick-naufel-small.b64", { cache: "force-cache" })
+    fetch("/patrick-naufel.b64", { cache: "force-cache" })
       .then((response) => {
         if (!response.ok) throw new Error("PHOTO_NOT_FOUND");
         return response.text();
@@ -17,7 +17,10 @@ export default function CreatorPhotoRepair() {
         if (!clean.startsWith("/9j/")) return;
 
         const image = document.querySelector<HTMLImageElement>('.creatorPhotoWrap img[src="/patrick-naufel.jpg"]');
-        if (image) image.src = `data:image/jpeg;base64,${clean}`;
+        if (image) {
+          image.decoding = "async";
+          image.src = `data:image/jpeg;base64,${clean}`;
+        }
       })
       .catch(() => undefined);
 
