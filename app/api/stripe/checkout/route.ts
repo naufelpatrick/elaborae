@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createCheckoutSession } from "@/lib/billing";
-import { getSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase";
+import { createCheckoutSession, getSupabaseAdminClient } from "@/lib/billing";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -16,13 +16,20 @@ export async function POST(request: NextRequest) {
   try {
     const token = bearerToken(request);
     if (!token || !isSupabaseConfigured()) {
-      return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+      return NextResponse.json(
+        { error: "AUTH_REQUIRED", message: "Sua sessão não foi reconhecida. Entre novamente no Elaborae." },
+        { status: 401 },
+      );
     }
 
-    const supabase = getSupabaseServerClient(token);
-    const { data, error } = await supabase.auth.getUser(token);
+    const admin = getSupabaseAdminClient();
+    const { data, error } = await admin.auth.getUser(token);
     if (error || !data.user?.email) {
-      return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+      console.warn("[Stripe Checkout Auth]", error?.message || "USER_EMAIL_MISSING");
+      return NextResponse.json(
+        { error: "AUTH_REQUIRED", message: "Sua sessão expirou. Entre novamente no Elaborae." },
+        { status: 401 },
+      );
     }
 
     const { credits } = CheckoutSchema.parse(await request.json());
