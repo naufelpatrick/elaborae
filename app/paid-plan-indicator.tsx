@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
@@ -11,9 +12,12 @@ type PaidUsage = {
   remaining: number;
 };
 
+const LOW_CREDIT_THRESHOLD = 5;
+
 export default function PaidPlanIndicator() {
   const [session, setSession] = useState<Session | null>(null);
   const [usage, setUsage] = useState<PaidUsage | null>(null);
+  const [warningHost, setWarningHost] = useState<HTMLElement | null>(null);
   const lastRefreshRef = useRef(0);
 
   async function refresh(current: Session | null) {
@@ -60,7 +64,10 @@ export default function PaidPlanIndicator() {
 
     const sync = () => {
       const bar = document.querySelector<HTMLElement>(".usageBar");
-      if (!bar) return;
+      if (!bar) {
+        setWarningHost(null);
+        return;
+      }
 
       if (usage?.plan === "paid" && usage.purchased > 0) {
         const label = bar.querySelector("span");
@@ -69,6 +76,14 @@ export default function PaidPlanIndicator() {
         if (label && label.textContent !== "Plano Pago") label.textContent = "Plano Pago";
         if (counter && counter.textContent !== nextCounter) counter.textContent = nextCounter;
       }
+
+      let host = document.getElementById("paid-credit-warning-host");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "paid-credit-warning-host";
+        bar.insertAdjacentElement("afterend", host);
+      }
+      setWarningHost(host);
     };
 
     const observer = new MutationObserver(() => {
@@ -92,8 +107,32 @@ export default function PaidPlanIndicator() {
       observer.disconnect();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
+      document.getElementById("paid-credit-warning-host")?.remove();
+      setWarningHost(null);
     };
   }, [session, usage]);
 
-  return null;
+  const lowCredits = usage?.plan === "paid" && usage.purchased > 0 && usage.remaining <= LOW_CREDIT_THRESHOLD;
+
+  function goToPlans() {
+    document.querySelector(".billingSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  if (!lowCredits || !warningHost || !usage) return null;
+
+  const empty = usage.remaining <= 0;
+  return createPortal(
+    <div className={`paidCreditWarning${empty ? " empty" : ""}`} role="status" aria-live="polite">
+      <div>
+        <strong>{empty ? "Seus créditos acabaram." : "Seus créditos estão no fim."}</strong>
+        <p>
+          {empty
+            ? "Compre um novo pacote para iniciar outra consulta."
+            : `Você ainda tem ${usage.remaining} consulta${usage.remaining === 1 ? "" : "s"}. Compre mais para continuar sem interrupções.`}
+        </p>
+      </div>
+      <button type="button" onClick={goToPlans}>Comprar mais consultas</button>
+    </div>,
+    warningHost,
+  );
 }
