@@ -2,31 +2,16 @@
 
 import { useEffect } from "react";
 
+const CREATOR_PHOTO_URL = "https://avatars.githubusercontent.com/u/52705137?v=4";
+
 export default function CreatorPhotoRepair() {
   useEffect(() => {
-    let mounted = true;
+    const image = document.querySelector<HTMLImageElement>(".creatorPhotoWrap img");
+    if (!image) return;
 
-    fetch("/patrick-naufel.b64", { cache: "force-cache" })
-      .then((response) => {
-        if (!response.ok) throw new Error("PHOTO_NOT_FOUND");
-        return response.text();
-      })
-      .then((base64) => {
-        if (!mounted) return;
-        const clean = base64.trim();
-        if (!clean.startsWith("/9j/")) return;
-
-        const image = document.querySelector<HTMLImageElement>('.creatorPhotoWrap img[src="/patrick-naufel.jpg"]');
-        if (image) {
-          image.decoding = "async";
-          image.src = `data:image/jpeg;base64,${clean}`;
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      mounted = false;
-    };
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    image.src = CREATOR_PHOTO_URL;
   }, []);
 
   return null;
