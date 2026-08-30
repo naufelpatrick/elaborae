@@ -1,5 +1,6 @@
 "use client";
 
+// Preview redeploy trigger after Stripe environment configuration.
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Session } from "@supabase/supabase-js";
