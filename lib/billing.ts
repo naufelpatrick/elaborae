@@ -6,18 +6,18 @@ const STRIPE_SANDBOX_PRICES = {
   60: "price_1UACt4GuXqFqFCLPLM9oEBbc",
 } as const;
 
-const isVercelPreview = process.env.VERCEL_ENV === "preview";
-
-export const STRIPE_TEST_PRICES = {
-  30: isVercelPreview
-    ? STRIPE_SANDBOX_PRICES[30]
-    : process.env.STRIPE_PRICE_30 || STRIPE_SANDBOX_PRICES[30],
-  60: isVercelPreview
-    ? STRIPE_SANDBOX_PRICES[60]
-    : process.env.STRIPE_PRICE_60 || STRIPE_SANDBOX_PRICES[60],
+const STRIPE_LIVE_PRICES = {
+  30: "price_1UAD9iGkbNWE4GI8SCmkfmpI",
+  60: "price_1UAD9tGkbNWE4GI8B92ErgZs",
 } as const;
 
-export type CreditPack = keyof typeof STRIPE_TEST_PRICES;
+const isVercelProduction = process.env.VERCEL_ENV === "production";
+
+export const STRIPE_PRICES = isVercelProduction
+  ? STRIPE_LIVE_PRICES
+  : STRIPE_SANDBOX_PRICES;
+
+export type CreditPack = keyof typeof STRIPE_PRICES;
 
 export function isBillingConfigured() {
   return Boolean(
@@ -36,7 +36,7 @@ export async function createCheckoutSession(input: {
   const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secretKey) throw new Error("STRIPE_NOT_CONFIGURED");
 
-  const price = STRIPE_TEST_PRICES[input.credits];
+  const price = STRIPE_PRICES[input.credits];
   const body = new URLSearchParams();
   body.set("mode", "payment");
   body.set("success_url", `${input.origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`);
